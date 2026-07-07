@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Таблица товаров для «Заполнителя» Альта-Софт</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="form-head">
+  <div class="form-head__stamp" aria-hidden="true">
+    <span>ДЕКЛАРАНТ</span>
+    <span class="form-head__stamp-line"></span>
+    <span>ПРИЛОЖЕНИЕ К ДТ</span>
+  </div>
+  <h1>Таблица товаров для «Заполнителя»</h1>
+  <p class="form-head__sub">Загрузите инвойс, упаковочный лист, спецификацию — приложение соберёт единую таблицу
+  из&nbsp;12 граф для импорта в «Заполнитель» (Альта-Софт). Файлы обрабатываются в браузере и никуда не отправляются.</p>
+  <ol class="graph-strip" aria-label="Графы итоговой таблицы">
+    <li><b>1</b>№ п/п</li>
+    <li><b>2</b>Наименование</li>
+    <li><b>3</b>Код ед. изм. (цифр.)</li>
+    <li><b>4</b>Код ед. изм. (букв.)</li>
+    <li><b>5</b>Количество</li>
+    <li><b>6</b>Цена за ед.</li>
+    <li><b>7</b>Общая стоимость</li>
+    <li><b>8</b>Артикул / код изделия</li>
+    <li><b>9</b>Нетто за ед., кг</li>
+    <li><b>10</b>Нетто общий, кг</li>
+    <li><b>11</b>Брутто общий, кг</li>
+    <li><b>12</b>Грузовое место</li>
+  </ol>
+</header>
+
+<main>
+  <section class="panel" id="upload-panel">
+    <div class="drop" id="drop-zone" tabindex="0" role="button" aria-label="Загрузить документы">
+      <div class="drop__icon" aria-hidden="true">⇩</div>
+      <p class="drop__title">Перетащите документы сюда или <span class="drop__link">выберите файлы</span></p>
+      <p class="drop__hint">XLSX · XLS · CSV · PDF · DOCX · TXT — можно несколько файлов сразу</p>
+      <input type="file" id="file-input" multiple
+             accept=".xlsx,.xls,.csv,.pdf,.docx,.txt"
+             hidden>
+    </div>
+    <ul class="file-list" id="file-list"></ul>
+    <div class="actions">
+      <button class="btn btn--primary" id="build-btn" disabled>Собрать таблицу</button>
+      <button class="btn" id="clear-btn" disabled>Очистить</button>
+    </div>
+    <p class="status" id="status" role="status"></p>
+  </section>
+
+  <section class="panel panel--result" id="result-panel" hidden>
+    <div class="result-head">
+      <h2>Итоговая таблица</h2>
+      <div class="result-head__right">
+        <span class="legend"><i class="legend__swatch"></i>расхождение по количеству, весу или стоимости</span>
+        <button class="btn btn--primary" id="export-btn">Скачать XLSX</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="result-table">
+        <thead>
+          <tr>
+            <th>№ п/п</th>
+            <th class="col-name">Наименование товара</th>
+            <th>Код ед. изм. (цифр.)</th>
+            <th>Код ед. изм. (букв.)</th>
+            <th>Кол-во</th>
+            <th>Цена за ед.</th>
+            <th>Общая стоимость</th>
+            <th>Артикул / код изделия</th>
+            <th>Нетто за ед., кг</th>
+            <th>Нетто общий, кг</th>
+            <th>Брутто общий, кг</th>
+            <th>Груз. место</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot></tfoot>
+      </table>
+    </div>
+    <div class="notes" id="notes"></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>Брутто грузового места распределяется пропорционально нетто товаров этого места, округление — 3 знака.</span>
+  <span>Повторяющиеся товары объединяются в одну строку. Незаполненные графы остаются пустыми.</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
