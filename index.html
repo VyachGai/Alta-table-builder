@@ -50,6 +50,13 @@
     <div class="actions">
       <button class="btn btn--primary" id="build-btn" disabled>Собрать таблицу</button>
       <button class="btn" id="clear-btn" disabled>Очистить</button>
+      <label class="mode-toggle" title="Режим группировки: одинаковые товары объединяются в одну строку. Режим «построчно»: каждая строка упаковочного листа — отдельная строка таблицы; цена подтягивается из инвойса по артикулу.">
+        <span>Режим:</span>
+        <select id="mode-select">
+          <option value="merge">Группировать одинаковые</option>
+          <option value="rowbyrow">Построчно (из упаковочного листа)</option>
+        </select>
+      </label>
     </div>
     <p class="status" id="status" role="status"></p>
   </section>

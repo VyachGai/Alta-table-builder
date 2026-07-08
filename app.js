@@ -223,7 +223,7 @@ function extractFromGrid(rows, fileName) {
     if (isDocTrailerStart(row)) break;
     /* Отсеиваем строки нумерации граф («1», «1а», «2а»…) и прочий мусор:
        в наименовании должно быть хотя бы 3 буквы подряд, либо внятный артикул. */
-    if (!hasLetters(name) && !/[A-Za-zА-Яа-я0-9]{4,}/.test(article)) continue;
+    if (!hasLetters(name) && !/[A-Za-zА-Яа-я0-9]{3,}/.test(article)) continue;
     /* Двухстрочные заголовки (EN + RU): если ячейки строки сами похожи
        на названия колонок — это продолжение шапки, а не товар. */
     let headerish = 0;
@@ -784,6 +784,7 @@ buildBtn.addEventListener("click", async () => {
   setStatus("Читаю документы…");
   state.notes = [];
   pdfWarnings = [];
+  const mode = $("mode-select") ? $("mode-select").value : "merge";
   try {
     const all = [];
     for (const f of state.files) {
@@ -802,8 +803,13 @@ buildBtn.addEventListener("click", async () => {
       buildBtn.disabled = false;
       return;
     }
-    const rows = mergeItems(all);
-    distributeGross(rows);
+    let rows;
+    if (mode === "rowbyrow") {
+      rows = buildRowByRow(all);
+    } else {
+      rows = mergeItems(all);
+      distributeGross(rows);
+    }
     /* порядок строк — порядок появления товаров в документах (как в инвойсе) */
     state.rows = rows;
     renderResult();
@@ -813,6 +819,90 @@ buildBtn.addEventListener("click", async () => {
   }
   buildBtn.disabled = false;
 });
+
+/* ---------- Построчный режим ---------------------------------------------
+   Каждая строка из файлов-источников → отдельная строка таблицы.
+   Файлы делятся на два типа:
+   • Упаковочные листы (PL) — содержат нетто, брутто, место; это «скелет»
+   • Инвойсы/спецификации (CI) — содержат цену; это «справочник цен»
+   PL-файл определяется наличием колонки «gross» при отсутствии «price»/«total»,
+   или наоборот. Если в файле есть и то, и другое — он служит обоими.
+   Цена подтягивается по артикулу из CI. Если артикул в CI не найден —
+   строка помечается замечанием.                                           */
+function buildRowByRow(allItems) {
+  /* Разделяем файлы на PL и CI по наличию колонок */
+  const byFile = new Map();
+  for (const it of allItems) {
+    if (!byFile.has(it.source)) byFile.set(it.source, []);
+    byFile.get(it.source).push(it);
+  }
+
+  /* Для каждого файла определяем: есть ли в нём весовые данные (PL) и/или ценовые (CI) */
+  const plItems = [], ciPrices = new Map(); // artKey → {price, total, qty}
+  for (const [src, items] of byFile) {
+    const hasWeight = items.some((it) => it.netTotal !== null || it.gross !== null);
+    const hasPrice  = items.some((it) => it.price !== null || it.total !== null);
+    if (hasWeight) plItems.push(...items.map((it) => ({ ...it })));
+    if (hasPrice) {
+      for (const it of items) {
+        if (!it.article) continue;
+        const key = normKey(it.article);
+        if (!ciPrices.has(key)) {
+          ciPrices.set(key, { price: it.price, total: it.total, qty: it.qty });
+        } else {
+          /* Если тот же артикул встречается несколько раз в CI — берём первую ненулевую цену */
+          const ex = ciPrices.get(key);
+          if (ex.price === null && it.price !== null) ex.price = it.price;
+        }
+      }
+    }
+  }
+
+  /* Если нет чистых PL — работаем со всеми строками */
+  const base = plItems.length ? plItems : allItems;
+
+  const rows = [];
+  const allSources = [...byFile.keys()];
+  const absentComment = allSources.length > 1
+    ? (src) => allSources.filter((s) => s !== src).map((s) => `Отсутствует в файле: ${s}`).join("; ")
+    : () => "";
+
+  for (const it of base) {
+    const artKey = normKey(it.article);
+    const ci = ciPrices.get(artKey);
+    let price = it.price ?? (ci ? ci.price : null);
+    let total = it.total;
+    if (total === null && price !== null && it.qty !== null) total = round2(price * it.qty);
+    if (total === null && ci && ci.total !== null && it.qty !== null && ci.qty !== null && ci.qty > 0)
+      total = round2(ci.total / ci.qty * it.qty);
+
+    const codes = unitCodes(it.unitRaw);
+    const comment = [];
+    if (it.price === null && !ci && it.article)
+      comment.push(`Цена не найдена: артикул «${it.article}» отсутствует в инвойсе`);
+
+    rows.push({
+      name: it.name || "",
+      article: it.article || "",
+      unitRaw: it.unitRaw || "",
+      unitNum: codes.num,
+      unitLet: codes.let,
+      qty:     it.qty,
+      price:   price,
+      total:   total,
+      netUnit: it.netUnit,
+      netTotal: it.netTotal,
+      gross:   it.gross,
+      places:  it.place ? [it.place] : [],
+      flagged: comment.length > 0,
+      discrepancies: [],
+      comment: comment.join("; "),
+      absent:  [],
+    });
+  }
+
+  return rows;
+}
 
 /* ---------- Отрисовка ------------------------------------------------------ */
 const fmt = (v, dec) => (v === null || v === undefined ? "" :

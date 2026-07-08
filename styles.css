@@ -159,7 +159,9 @@ tfoot td{font-weight:600;background:var(--paper)}
   border-top:1px solid var(--line);
 }
 
-@media (prefers-reduced-motion:reduce){
+.mode-toggle{display:inline-flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted)}
+.mode-toggle select{font:inherit;font-size:.82rem;padding:6px 10px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink);cursor:pointer}
+.mode-toggle select:focus{outline:2px solid var(--stamp);outline-offset:1px}
   *{transition:none!important}
 }
 @media (max-width:640px){
