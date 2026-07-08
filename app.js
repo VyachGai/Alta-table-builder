@@ -111,7 +111,7 @@ const hasLetters = (s) => /[A-Za-zА-Яа-яЁё]{3,}/.test(String(s || ""));
 const hasCyrillic = (s) => /[А-Яа-яЁё]/.test(String(s || ""));
 
 /* ---------- Состояние ---------------------------------------------------- */
-const state = { files: [], rows: [], notes: [] };
+const state = { files: [], rows: [], notes: [], footerErrors: [] };
 
 const $ = (id) => document.getElementById(id);
 const dropZone  = $("drop-zone");
@@ -169,7 +169,7 @@ function renderFileList() {
 }
 
 clearBtn.addEventListener("click", () => {
-  state.files = []; state.rows = []; state.notes = [];
+  state.files = []; state.rows = []; state.notes = []; state.footerErrors = [];
   renderFileList(); $("result-panel").hidden = true; setStatus("");
 });
 
@@ -246,21 +246,78 @@ function extractFromGrid(rows, fileName) {
     }
 
     const unitRaw = cleanVal(get("unit"));
+    const _qty      = parseNum(cleanVal(get("qty")));
+    const _price    = parseNum(cleanVal(get("price")));
+    const _total    = parseNum(cleanVal(get("total")));
+    const _netUnit  = parseNum(cleanVal(get("netUnit")));
+    const _netTotal = parseNum(cleanVal(get("netTotal")));
+    const _gross    = parseNum(cleanVal(get("gross")));
     const item = {
       source: fileName,
       name, article,
       unitRaw,
-      qty:      parseNum(cleanVal(get("qty"))),
-      price:    parseNum(cleanVal(get("price"))),
-      total:    parseNum(cleanVal(get("total"))),
-      netUnit:  parseNum(cleanVal(get("netUnit"))),
-      netTotal: parseNum(cleanVal(get("netTotal"))),
-      gross:    parseNum(cleanVal(get("gross"))),
+      qty:      _qty,
+      price:    _price,
+      total:    _total,
+      netUnit:  _netUnit,
+      netTotal: _netTotal,
+      gross:    _gross,
       place,
+      /* Математические проверки построчно:
+         если расчёт программы расходится с тем, что написано в файле — фиксируем. */
+      mathErrors: [],
     };
+    /* qty × price vs total */
+    if (_qty !== null && _price !== null && _total !== null) {
+      const calc = round2(_qty * _price);
+      if (Math.abs(calc - _total) > 0.02)
+        item.mathErrors.push({ field: "total", calc, stated: _total });
+    }
+    /* qty × netUnit vs netTotal */
+    if (_qty !== null && _netUnit !== null && _netTotal !== null) {
+      const calc = round3(_qty * _netUnit);
+      /* Допуск: округление единичного веса накапливается; берём погрешность
+         в 2% или 0.1 кг (что больше) — иначе слишком много ложных срабатываний. */
+      const tol = Math.max(0.1, _netTotal * 0.02);
+      if (Math.abs(calc - _netTotal) > tol)
+        item.mathErrors.push({ field: "netTotal", calc, stated: _netTotal });
+    }
     if (item.qty === null && item.total === null && item.netTotal === null && !item.article) continue;
     items.push(item);
   }
+  /* Итоговые контрольные значения из «подвала» документа
+     (строки «Gross Weight | 5548.58», «Net weight | 5207.69» и аналогичные). */
+  const fileTotals = { netWeight: null, grossWeight: null };
+  const footerRe = /gross\s*weight|net\s*weight|total\s*net|total\s*gross|нетто.{0,10}партии|брутто.{0,10}партии/i;
+  for (const row of rows) {
+    const cells = row.map((v) => (v === null || v === undefined ? "" : String(v).trim()));
+    const joined = cells.join(" ").toLowerCase();
+    if (!footerRe.test(joined)) continue;
+    const nums = cells.map(parseNum).filter((n) => n !== null && n > 0);
+    if (!nums.length) continue;
+    const val = nums[0];
+    if (/gross\s*weight|брутто.{0,10}партии/i.test(joined) && fileTotals.grossWeight === null)
+      fileTotals.grossWeight = val;
+    if (/net\s*weight|total\s*net(?!\s*gross)|нетто.{0,10}партии/i.test(joined) && fileTotals.netWeight === null)
+      fileTotals.netWeight = val;
+  }
+  /* Сравниваем сумму нетто/брутто строк с контрольными значениями подвала.
+     Результат кладём в специальный маркер, который mergeItems разберёт позже. */
+  if (fileTotals.netWeight !== null || fileTotals.grossWeight !== null) {
+    const sumNet   = items.reduce((s, it) => it.netTotal !== null ? s + it.netTotal : s, 0);
+    const sumGross = items.reduce((s, it) => it.gross   !== null ? s + it.gross    : s, 0);
+    const footerErrors = [];
+    if (fileTotals.netWeight !== null && Math.abs(round3(sumNet) - fileTotals.netWeight) > 0.05)
+      footerErrors.push({ field: "netWeight",   calc: round3(sumNet),   stated: fileTotals.netWeight });
+    if (fileTotals.grossWeight !== null && Math.abs(round3(sumGross) - fileTotals.grossWeight) > 0.05)
+      footerErrors.push({ field: "grossWeight", calc: round3(sumGross), stated: fileTotals.grossWeight });
+    if (footerErrors.length) {
+      /* Помечаем первый элемент-маркер (у него нет имени/артикула) */
+      items._footerErrors = footerErrors;
+      items._footerSource = fileName;
+    }
+  }
+
   return mergeTranslations(items);
 }
 
@@ -705,6 +762,7 @@ function mergeItems(allItems) {
       discrepancies,
       comment: "",     // заполняется ниже
       absent: [],      // список файлов, в которых товар отсутствует
+      mathErrors: parts.flatMap((p) => p.mathErrors || []),
     });
   }
   /* Если загружено > 1 файла, проставляем absent для каждой строки:
@@ -793,11 +851,13 @@ buildBtn.addEventListener("click", async () => {
   const mode = $("mode-select") ? $("mode-select").value : "merge";
   try {
     const all = [];
+    const footerErrors = []; // ошибки итогов файлов (нетто/брутто footer vs сумма строк)
     for (const f of state.files) {
       setStatus(`Обрабатываю: ${f.name}`);
       try {
         const items = await readFileItems(f);
         if (!items.length) state.notes.push(`В файле «${f.name}» табличные данные о товарах не найдены — проверьте документ.`);
+        if (items._footerErrors) footerErrors.push(...items._footerErrors.map((e) => ({ ...e, source: items._footerSource })));
         all.push(...items);
       } catch (err) {
         state.notes.push(`Файл «${f.name}» не прочитан: ${err.message}`);
@@ -818,6 +878,8 @@ buildBtn.addEventListener("click", async () => {
     }
     /* порядок строк — порядок появления товаров в документах (как в инвойсе) */
     state.rows = rows;
+    state.footerErrors = footerErrors;
+    applyMathErrors(rows, footerErrors);
     renderResult();
     setStatus(`Готово: товаров — ${rows.length}, обработано файлов — ${state.files.length}.`);
   } catch (err) {
@@ -900,14 +962,52 @@ function buildRowByRow(allItems) {
       netTotal: it.netTotal,
       gross:   it.gross,
       places:  it.place ? [it.place] : [],
-      flagged: comment.length > 0,
+      flagged: comment.length > 0 || (it.mathErrors && it.mathErrors.length > 0),
       discrepancies: [],
       comment: comment.join("; "),
       absent:  [],
+      mathErrors: it.mathErrors || [],
     });
   }
 
   return rows;
+}
+
+/* Строит HTML для ячейки «Замечания заполнителя»:
+   обычные замечания — обычным цветом, математические — красным. */
+function buildRemarkCell(r) {
+  const parts = [];
+  if (r.mathComment) {
+    parts.push(`<span class="math-err">${escapeHtml(r.mathComment)}</span>`);
+  }
+  const base = (r.comment || "").replace(r.mathComment || " ", "").replace(/^;\s*|;\s*$/g,"").trim();
+  if (base) parts.push(escapeHtml(base));
+  return parts.join("<br>");
+}
+
+/* ---------- Математические ошибки ---------------------------------------
+   Применяет построчные mathErrors к комментариям и флагам строк.
+   footerErrors идут в state.footerErrors для отдельной подсветки итогов.   */
+function applyMathErrors(rows, footerErrors) {
+  const fieldLabel = {
+    total:       "общая стоимость",
+    netTotal:    "общий вес нетто",
+    grossWeight: "вес брутто (итог файла)",
+    netWeight:   "вес нетто (итог файла)",
+  };
+  for (const row of rows) {
+    if (!row.mathErrors || !row.mathErrors.length) continue;
+    const msgs = row.mathErrors.map((e) => {
+      const lbl = fieldLabel[e.field] || e.field;
+      return `Расчёт (${e.calc}) ≠ значению в файле (${e.stated}): ${lbl}`;
+    });
+    row.mathFlag = true;   // красная заливка
+    row.flagged  = true;
+    row.mathComment = msgs.join("; ");
+    row.comment = row.comment
+      ? row.comment + "; " + row.mathComment
+      : row.mathComment;
+  }
 }
 
 /* ---------- Отрисовка ------------------------------------------------------ */
@@ -922,7 +1022,9 @@ function renderResult() {
 
   state.rows.forEach((r, i) => {
     const tr = document.createElement("tr");
-    if (r.flagged) { tr.classList.add("is-flagged"); tr.title = r.discrepancies.join("\n"); }
+    if (r.mathFlag)  tr.classList.add("is-math-error");   // красная заливка
+    else if (r.flagged) tr.classList.add("is-flagged");        // жёлтая
+    if (r.discrepancies.length) tr.title = r.discrepancies.join("\n");
     tr.innerHTML =
       `<td>${i + 1}</td>` +
       `<td class="cell-name">${escapeHtml(r.name)}</td>` +
@@ -936,7 +1038,7 @@ function renderResult() {
       `<td>${fmt(r.netTotal, 3)}</td>` +
       `<td>${fmt(r.gross, 3)}</td>` +
       `<td>${escapeHtml(r.places.join(", "))}</td>` +
-      `<td class="cell-remark">${escapeHtml(r.comment || "")}</td>` +
+      `<td class="cell-remark">${buildRemarkCell(r)}</td>` +
       `<td class="cell-tnved"></td>` +
       `<td class="cell-manual"></td>` +
       `<td class="cell-manual"></td>` +
@@ -947,10 +1049,18 @@ function renderResult() {
     sums.net += r.netTotal ?? 0; sums.gross += r.gross ?? 0;
   });
 
+  const feErrs = state.footerErrors || [];
+  const feMsg = feErrs.map((e) => {
+    const lbl = e.field === "netWeight" ? "нетто" : "брутто";
+    return `Итог ${lbl}: расчёт (${e.field === "netWeight" ? round3(sums.net) : round3(sums.gross)}) ≠ значению в файле (${e.stated}): ${e.source}`;
+  }).join("; ");
+  const netClass  = feErrs.some((e) => e.field === "netWeight")   ? ' class="cell-math-error"' : "";
+  const grossClass= feErrs.some((e) => e.field === "grossWeight") ? ' class="cell-math-error"' : "";
   tfoot.innerHTML =
     `<tr><td colspan="4">Итого</td>` +
     `<td>${fmt(sums.qty, 3)}</td><td></td><td>${fmt(round2(sums.total), 2)}</td><td></td>` +
-    `<td></td><td>${fmt(round3(sums.net), 3)}</td><td>${fmt(round3(sums.gross), 3)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+    `<td></td><td${netClass}>${fmt(round3(sums.net), 3)}</td><td${grossClass}>${fmt(round3(sums.gross), 3)}</td><td></td>` +
+    `<td class="cell-remark">${feMsg ? `<span class="math-err">${escapeHtml(feMsg)}</span>` : ""}</td><td></td><td></td><td></td><td></td><td></td></tr>`;
 
   /* Предупреждения уровня файла (PDF-места, нечитаемые файлы) добавляем
      в замечания первой строки таблицы, чтобы не терялись. */

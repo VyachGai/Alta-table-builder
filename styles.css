@@ -169,3 +169,9 @@ tfoot td{font-weight:600;background:var(--paper)}
   .panel{padding:14px}
   .graph-strip{grid-template-columns:repeat(2,1fr)}
 }
+
+/* ---------- Математические ошибки --------------------------------------- */
+tr.is-math-error td{background:#FFE0E0}
+tr.is-math-error td:first-child{box-shadow:inset 3px 0 0 #C0392B}
+.math-err{color:#C0392B;font-weight:600}
+.legend__swatch--red{background:#FFE0E0;border-color:#C0392B}
