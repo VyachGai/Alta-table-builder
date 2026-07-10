@@ -40,6 +40,207 @@ function unitCodes(raw) {
   return { num: "", let: "" };
 }
 
+
+/* ---------- Классификатор стран мира (ISO 3166-1) ----------------------- */
+const COUNTRIES = {
+  "AFGHANISTAN":{"a2":"AF","num":"004"},"ALBANIA":{"a2":"AL","num":"008"},
+  "ALGERIA":{"a2":"DZ","num":"012"},"ANDORRA":{"a2":"AD","num":"020"},
+  "ANGOLA":{"a2":"AO","num":"024"},"ARGENTINA":{"a2":"AR","num":"032"},
+  "ARMENIA":{"a2":"AM","num":"051"},"AUSTRALIA":{"a2":"AU","num":"036"},
+  "AUSTRIA":{"a2":"AT","num":"040"},"AZERBAIJAN":{"a2":"AZ","num":"031"},
+  "BAHRAIN":{"a2":"BH","num":"048"},"BANGLADESH":{"a2":"BD","num":"050"},
+  "BELARUS":{"a2":"BY","num":"112"},"BELGIUM":{"a2":"BE","num":"056"},
+  "BOLIVIA":{"a2":"BO","num":"068"},"BRAZIL":{"a2":"BR","num":"076"},
+  "BULGARIA":{"a2":"BG","num":"100"},"CAMBODIA":{"a2":"KH","num":"116"},
+  "CAMEROON":{"a2":"CM","num":"120"},"CANADA":{"a2":"CA","num":"124"},
+  "CHILE":{"a2":"CL","num":"152"},"CHINA":{"a2":"CN","num":"156"},
+  "COLOMBIA":{"a2":"CO","num":"170"},"CROATIA":{"a2":"HR","num":"191"},
+  "CUBA":{"a2":"CU","num":"192"},"CYPRUS":{"a2":"CY","num":"196"},
+  "CZECHIA":{"a2":"CZ","num":"203"},"CZECH REPUBLIC":{"a2":"CZ","num":"203"},
+  "DENMARK":{"a2":"DK","num":"208"},"ECUADOR":{"a2":"EC","num":"218"},
+  "EGYPT":{"a2":"EG","num":"818"},"ESTONIA":{"a2":"EE","num":"233"},
+  "ETHIOPIA":{"a2":"ET","num":"231"},"FINLAND":{"a2":"FI","num":"246"},
+  "FRANCE":{"a2":"FR","num":"250"},"GEORGIA":{"a2":"GE","num":"268"},
+  "GERMANY":{"a2":"DE","num":"276"},"GREECE":{"a2":"GR","num":"300"},
+  "HONG KONG":{"a2":"HK","num":"344"},"HUNGARY":{"a2":"HU","num":"348"},
+  "ICELAND":{"a2":"IS","num":"352"},"INDIA":{"a2":"IN","num":"356"},
+  "INDONESIA":{"a2":"ID","num":"360"},"IRAN":{"a2":"IR","num":"364"},
+  "IRAQ":{"a2":"IQ","num":"368"},"IRELAND":{"a2":"IE","num":"372"},
+  "ISRAEL":{"a2":"IL","num":"376"},"ITALY":{"a2":"IT","num":"380"},
+  "JAPAN":{"a2":"JP","num":"392"},"JORDAN":{"a2":"JO","num":"400"},
+  "KAZAKHSTAN":{"a2":"KZ","num":"398"},"KENYA":{"a2":"KE","num":"404"},
+  "NORTH KOREA":{"a2":"KP","num":"408"},"SOUTH KOREA":{"a2":"KR","num":"410"},
+  "KOREA":{"a2":"KR","num":"410"},"KUWAIT":{"a2":"KW","num":"414"},
+  "KYRGYZSTAN":{"a2":"KG","num":"417"},"LATVIA":{"a2":"LV","num":"428"},
+  "LEBANON":{"a2":"LB","num":"422"},"LIBYA":{"a2":"LY","num":"434"},
+  "LIECHTENSTEIN":{"a2":"LI","num":"438"},"LITHUANIA":{"a2":"LT","num":"440"},
+  "LUXEMBOURG":{"a2":"LU","num":"442"},"MALAYSIA":{"a2":"MY","num":"458"},
+  "MALTA":{"a2":"MT","num":"470"},"MEXICO":{"a2":"MX","num":"484"},
+  "MOLDOVA":{"a2":"MD","num":"498"},"MONACO":{"a2":"MC","num":"492"},
+  "MONGOLIA":{"a2":"MN","num":"496"},"MOROCCO":{"a2":"MA","num":"504"},
+  "MYANMAR":{"a2":"MM","num":"104"},"NETHERLANDS":{"a2":"NL","num":"528"},
+  "NEW ZEALAND":{"a2":"NZ","num":"554"},"NIGERIA":{"a2":"NG","num":"566"},
+  "NORTH MACEDONIA":{"a2":"MK","num":"807"},"NORWAY":{"a2":"NO","num":"578"},
+  "OMAN":{"a2":"OM","num":"512"},"PAKISTAN":{"a2":"PK","num":"586"},
+  "PERU":{"a2":"PE","num":"604"},"PHILIPPINES":{"a2":"PH","num":"608"},
+  "POLAND":{"a2":"PL","num":"616"},"PORTUGAL":{"a2":"PT","num":"620"},
+  "QATAR":{"a2":"QA","num":"634"},"ROMANIA":{"a2":"RO","num":"642"},
+  "RUSSIA":{"a2":"RU","num":"643"},"RUSSIAN FEDERATION":{"a2":"RU","num":"643"},
+  "SAUDI ARABIA":{"a2":"SA","num":"682"},"SENEGAL":{"a2":"SN","num":"686"},
+  "SERBIA":{"a2":"RS","num":"688"},"SINGAPORE":{"a2":"SG","num":"702"},
+  "SLOVAKIA":{"a2":"SK","num":"703"},"SLOVENIA":{"a2":"SI","num":"705"},
+  "SOUTH AFRICA":{"a2":"ZA","num":"710"},"SPAIN":{"a2":"ES","num":"724"},
+  "SRI LANKA":{"a2":"LK","num":"144"},"SWEDEN":{"a2":"SE","num":"752"},
+  "SWITZERLAND":{"a2":"CH","num":"756"},"SYRIA":{"a2":"SY","num":"760"},
+  "TAIWAN":{"a2":"TW","num":"158"},"TAJIKISTAN":{"a2":"TJ","num":"762"},
+  "THAILAND":{"a2":"TH","num":"764"},"TUNISIA":{"a2":"TN","num":"788"},
+  "TURKEY":{"a2":"TR","num":"792"},"TURKIYE":{"a2":"TR","num":"792"},
+  "TURKMENISTAN":{"a2":"TM","num":"795"},"UKRAINE":{"a2":"UA","num":"804"},
+  "UAE":{"a2":"AE","num":"784"},"UNITED ARAB EMIRATES":{"a2":"AE","num":"784"},
+  "UK":{"a2":"GB","num":"826"},"UNITED KINGDOM":{"a2":"GB","num":"826"},
+  "GREAT BRITAIN":{"a2":"GB","num":"826"},"USA":{"a2":"US","num":"840"},
+  "UNITED STATES":{"a2":"US","num":"840"},"UZBEKISTAN":{"a2":"UZ","num":"860"},
+  "VENEZUELA":{"a2":"VE","num":"862"},"VIETNAM":{"a2":"VN","num":"704"},
+  "YEMEN":{"a2":"YE","num":"887"},
+  /* Русские названия */
+  "ГЕРМАНИЯ":{"a2":"DE","num":"276"},"РОССИЯ":{"a2":"RU","num":"643"},
+  "ШВЕЦИЯ":{"a2":"SE","num":"752"},"ПОЛЬША":{"a2":"PL","num":"616"},
+  "КИТАЙ":{"a2":"CN","num":"156"},"ЯПОНИЯ":{"a2":"JP","num":"392"},
+  "ФРАНЦИЯ":{"a2":"FR","num":"250"},"ИТАЛИЯ":{"a2":"IT","num":"380"},
+  "ИНДИЯ":{"a2":"IN","num":"356"},"ТУРЦИЯ":{"a2":"TR","num":"792"},
+  "РУМЫНИЯ":{"a2":"RO","num":"642"},"АВСТРИЯ":{"a2":"AT","num":"040"},
+  "США":{"a2":"US","num":"840"},"ВЕЛИКОБРИТАНИЯ":{"a2":"GB","num":"826"},
+  "БОЛГАРИЯ":{"a2":"BG","num":"100"},"ПОРТУГАЛИЯ":{"a2":"PT","num":"620"},
+  "НИДЕРЛАНДЫ":{"a2":"NL","num":"528"},"ФИНЛЯНДИЯ":{"a2":"FI","num":"246"},
+  "НОРВЕГИЯ":{"a2":"NO","num":"578"},"ДАНИЯ":{"a2":"DK","num":"208"},
+  "ШВЕЙЦАРИЯ":{"a2":"CH","num":"756"},"БЕЛЬГИЯ":{"a2":"BE","num":"056"},
+  "ЧЕХИЯ":{"a2":"CZ","num":"203"},"СЛОВАКИЯ":{"a2":"SK","num":"703"},
+  "ВЕНГРИЯ":{"a2":"HU","num":"348"},"БЕЛАРУСЬ":{"a2":"BY","num":"112"},
+  "УКРАИНА":{"a2":"UA","num":"804"},"КАЗАХСТАН":{"a2":"KZ","num":"398"},
+  "ВЬЕТНАМ":{"a2":"VN","num":"704"},"МАЛАЙЗИЯ":{"a2":"MY","num":"458"},
+  "ТАИЛАНД":{"a2":"TH","num":"764"},"ИЗРАИЛЬ":{"a2":"IL","num":"376"},
+  "ИРАН":{"a2":"IR","num":"364"},"КОРЕЯ":{"a2":"KR","num":"410"},
+};
+
+function countryByName(raw) {
+  if (!raw) return { name: "", a2: "", num: "" };
+  /* может быть "FAG\nGERMANY" — берём последнюю строку */
+  const lines = String(raw).trim().split(/\n|\r/);
+  const last = lines[lines.length - 1].trim().toUpperCase();
+  const entry = COUNTRIES[last];
+  if (entry) return { name: lines[lines.length - 1].trim(), a2: entry.a2, num: entry.num };
+  /* Частичное совпадение по началу */
+  for (const [k, v] of Object.entries(COUNTRIES)) {
+    if (last.startsWith(k) || k.startsWith(last)) return { name: lines[lines.length - 1].trim(), a2: v.a2, num: v.num };
+  }
+  return { name: lines[lines.length - 1].trim(), a2: "", num: "" };
+}
+
+/* Если первая строка — известный бренд, а не страна — извлекаем её отдельно */
+function brandFromCountryCol(raw) {
+  if (!raw) return "";
+  const lines = String(raw).trim().split(/\n|\r/);
+  if (lines.length < 2) return "";
+  const first = lines[0].trim();
+  /* Если это не страна — считаем брендом */
+  const isCountry = COUNTRIES[first.toUpperCase()];
+  return isCountry ? "" : first;
+}
+
+
+/* ---------- Разбивка «артикул + бренд» ---------------------------------- */
+/* В документах Agricos артикул = "22344-BE-XL FAG" → арт + бренд через пробел. */
+const KNOWN_BRANDS = new Set([
+  "FAG","SKF","NSK","NTN","TIMKEN","INA","KOYO","NACHI","SNR","RHP",
+  "HRB","LYC","ZWZ","ASAHI","FYH","NMB","PEER","RBC","SL","URB",
+  "CRAFT","RUVILLE","BOSCH","ZF","SACHS","VALEO","LUK","IHC","GATES",
+  "MANN","MAHLE","ELRING","VICTOR REINZ","GLASER","GOETZE","KOLBENSCHMIDT",
+  "MAHLE","GLYCO","GLYCODUR","FEDERAL MOGUL","DELPHI","DENSO","CONTINENTAL",
+  "SIEMENS","ABB","SCHAEFFER","IGUS","REXNORD","DODGE","SEALMASTER",
+  "UCFC","UCF","UCFL","UCFB","UCFCX","UCFCF","UCFCFL",
+  "3M","SKF","KLUBER","MOLYKOTE","CASTROL","SHELL","MOBIL","TOTAL",
+]);
+
+/* Разбивает строку «наименование [марка] [модель] [артикул]» на части.
+   
+   Логика для кириллических строк (есть хотя бы одно кириллическое слово):
+   1. Начальные кириллические слова → наименование товара
+   2. Следующее слово, если оно начинается с заглавной и не похоже на код (≥2 букв, нет цифр
+      в первых 2 символах) → марка
+   3. Следующее слово аналогично → модель
+   4. Остаток (если есть цифро-буквенный код) → артикул (не перезаписывает уже найденный)
+   
+   Логика для чисто латинских/цифровых строк:
+   — Если в конце стоит известный бренд → brand, остальное → cleanName
+   — Иначе → cleanName = вся строка (не угадываем) */
+function parseNameParts(raw) {
+  if (!raw) return { cleanName: "", brand: "", model: "" };
+  const s = String(raw).trim();
+  const tokens = s.split(/\s+/);
+  
+  /* 1. Известный бренд в конце латинской строки: "22344-BE-XL FAG" */
+  if (tokens.length >= 2 && KNOWN_BRANDS.has(tokens[tokens.length - 1].toUpperCase())) {
+    const brand = tokens[tokens.length - 1];
+    const cleanName = tokens.slice(0, -1).join(" ");
+    return { cleanName, brand, model: "" };
+  }
+
+  /* 2. Кириллическая строка — разбиваем по смысловым зонам */
+  const hasCyr = /[А-Яа-яЁё]/.test(s);
+  if (!hasCyr) return { cleanName: s, brand: "", model: "" };
+
+  let i = 0;
+  const nameParts = [];
+
+  /* Проверка: является ли токен вероятным кодом изделия/артикулом (не маркой)?
+     Критерии: содержит цифры в первых 4 символах ИЛИ вся строка короче 3 букв подряд */
+  const isCode = (tok) => {
+    if (!tok) return false;
+    if (/^\d/.test(tok)) return true;             // начинается с цифры
+    if (/^[A-Za-z]{1,3}\d/.test(tok)) return true; // 1-3 буквы + цифра (N319, UC210)
+    if ((tok.match(/\d/g) || []).length > tok.length * 0.3) return true; // >30% цифр
+    return false;
+  };
+
+  /* Зона наименования.
+     Для строк вида "автомобиль Субару форестер SH5":
+     — останавливаемся перед токеном, который НАЧИНАЕТСЯ с заглавной НО не является
+       продолжением кириллического наименования (т.е. предыдущий токен уже кириллический
+       и следующий тоже кириллический-заглавный → это уже марка).
+     Правило: берём первый «тематический блок» — пока токены содержат кириллицу и
+     следующий токен не выглядит как отдельное имя собственное. */
+  while (i < tokens.length) {
+    const tok = tokens[i];
+    const hasCyrInTok = /[А-Яа-яЁё]/.test(tok);
+    if (!hasCyrInTok) break;  // перешли в латиницу/цифры — стоп
+    /* Если это ЗАГЛАВНОЕ кириллическое слово (потенциальная марка) и наименование уже есть */
+    if (nameParts.length > 0 && /^[А-ЯЁ][а-яё]/.test(tok)) {
+      /* Это слово с большой буквы после строчных — вероятная марка, стоп */
+      break;
+    }
+    nameParts.push(tok); i++;
+  }
+
+  /* Зона марки: следующий токен, начинающийся с заглавной,
+     НЕ являющийся кодом изделия */
+  const isBrandToken = (tok) =>
+    /^[A-ZА-ЯЁ]/.test(tok) && !isCode(tok) && tok.length >= 2;
+
+  let brand = "", model = "";
+  if (i < tokens.length && isBrandToken(tokens[i])) {
+    brand = tokens[i]; i++;
+  }
+
+  /* Зона модели: если brand найден, следующий токен — модель */
+  if (brand && i < tokens.length) {
+    const tok = tokens[i];
+    if (!/^\d+$/.test(tok)) { model = tok; i++; }
+  }
+
+  const cleanName = nameParts.join(" ") || s;
+  return { cleanName, brand, model };
+}
+
 /* ---------- Ключевые слова для поиска колонок --------------------------- */
 /* Порядок важен: более специфичные поля проверяются раньше. */
 const FIELD_PATTERNS = [
@@ -50,7 +251,13 @@ const FIELD_PATTERNS = [
   ["total",    /стоимост|сумма|amount|total\s*(price|value|cost)|итого\s*стоим|value/i],
   ["qty",      /кол-?\s?во|количеств|qty|quantity|кол\.(?!\s*ед)/i],
   ["unit",     /ед\.?\s?изм|единиц[аы]\s*измерени|^unit s?$|^ед\.?$|measure/i],
-  ["article",  /артикул|код\s*(изделия|товара)|модель|изделие|model|article|part\s*(no|№|number)|item\s*(no|№|code)|sku|art\.?(?![a-z])|ref\.?\s*(no|№)?/i],
+  ["article",  /артикул|код\s*(изделия|товара)|изделие|article|part\s*(no|№|number)|item\s*(no|№|code)|sku|art\.?(?![a-z])|ref\.?\s*(no|№)?/i],
+  ["brand",    /^(бренд|торгов\w*\s*марк|trade\s*mark|trademark)$/i],
+  /* "Brand / Country of Origin" — смешанная колонка: данные разбираем ниже */
+  ["brandcountry", /brand[^а-яa-z]*country|country[^а-яa-z]*origin|brand\s*\n/i],
+  ["model",    /модель|model/i],
+  ["maker",    /изготовитель|производитель|manufacturer|made\s*by/i],
+  ["country",  /страна\s*(происхождения|изготовлен|origin)?|country\s*(of\s*)?(origin|manufacture)?/i],
   ["place",    /груз\w*\s*мест|мест[оа]\s*№?|№\s*мест|place|package\s*(no|№|number)?|box\s*(no|№|number)?|carton|кор(об|обк)\w*|паллет|pallet|case\s*(no|№)/i],
   ["name",     /наименован|назван|описан|товар|description|goods|name|item(?!\s*(no|№|code))|product|commodity/i],
 ];
@@ -245,16 +452,55 @@ function extractFromGrid(rows, fileName) {
       else place = lastPlace;
     }
 
-    const unitRaw = cleanVal(get("unit"));
+    const unitRaw   = cleanVal(get("unit"));
+    /* Бренд/страна: из отдельных колонок или встроены в артикул/наименование */
+    const brandRaw_raw = cleanVal(get("brand"));
+    const makerRaw     = cleanVal(get("maker"));
+    const countryRaw_raw = cleanVal(get("country"));
+    const modelRaw     = cleanVal(get("model"));
+    /* "Brand\nCountry of Origin" — смешанная колонка Agricos PL:
+       значение "GERMANY" → страна; "FAG\nGERMANY" → бренд + страна */
+    const bcRaw = cleanVal(get("brandcountry"));
+    let brandRaw   = brandRaw_raw;
+    let countryRaw = countryRaw_raw;
+    if (bcRaw) {
+      const bcLines = bcRaw.split(/\n|\r/).map((s) => s.trim()).filter(Boolean);
+      if (bcLines.length >= 2) {
+        /* первая строка — бренд, последняя — страна */
+        brandRaw   = brandRaw   || bcLines[0];
+        countryRaw = countryRaw || bcLines[bcLines.length - 1];
+      } else if (bcLines.length === 1) {
+        /* одна строка — это страна (если известная) или бренд */
+        const testCountry = countryByName(bcLines[0]);
+        if (testCountry.a2) countryRaw = countryRaw || bcLines[0];
+        else brandRaw = brandRaw || bcLines[0];
+      }
+    }
+    const nameParsed = parseNameParts(name);
     const _qty      = parseNum(cleanVal(get("qty")));
     const _price    = parseNum(cleanVal(get("price")));
     const _total    = parseNum(cleanVal(get("total")));
     const _netUnit  = parseNum(cleanVal(get("netUnit")));
     const _netTotal = parseNum(cleanVal(get("netTotal")));
     const _gross    = parseNum(cleanVal(get("gross")));
+    /* Извлекаем бренд из артикула, если не задан явно */
+    const artParsed   = parseNameParts(article);
+    /* brandRaw не должен быть страной */
+    const brandCandid = brandRaw && !countryByName(brandRaw).a2 ? brandRaw : "";
+    const finalBrand  = brandCandid || artParsed.brand || nameParsed.brand || "";
+    const finalModel  = modelRaw || nameParsed.model || "";
+    const finalMaker  = makerRaw || "";
+    /* Страна: берём из countryRaw */
+    const countryInfo = countryByName(countryRaw || "");
+    const finalCountryName = countryInfo.name || (countryRaw && !countryByName(countryRaw).a2 ? "" : countryRaw) || "";
+    /* Артикул: очищаем от бренда если он был в хвосте */
+    const cleanArticle = artParsed.cleanName || article;
+
     const item = {
       source: fileName,
-      name, article,
+      name, article: cleanArticle,
+      brand: finalBrand, model: finalModel, maker: finalMaker,
+      country: finalCountryName, countryA2: countryInfo.a2, countryNum: countryInfo.num,
       unitRaw,
       qty:      _qty,
       price:    _price,
@@ -749,8 +995,15 @@ function mergeItems(allItems) {
 
     rows.push({
       _parts: parts,
-      name: pick((p) => p.name) || "",
-      article: pick((p) => p.article) || "",
+      name:      pick((p) => p.name) || "",
+      article:   pick((p) => p.article) || "",
+      brand:     pick((p) => p.brand)   || "",
+      model:     pick((p) => p.model)   || "",
+      maker:     pick((p) => p.maker)   || "",
+      country:   pick((p) => p.country) || "",
+      countryA2: pick((p) => p.countryA2) || "",
+      countryNum:pick((p) => p.countryNum) || "",
+      sources:   [...new Set(parts.map((p) => p.source))],
       unitRaw, unitNum: codes.num, unitLet: codes.let,
       qty, price, total: totalC,
       netUnit, netTotal: net,
@@ -950,11 +1203,18 @@ function buildRowByRow(allItems) {
       comment.push(`Цена не найдена: артикул «${it.article}» отсутствует в инвойсе`);
 
     rows.push({
-      name: it.name || "",
-      article: it.article || "",
-      unitRaw: it.unitRaw || "",
-      unitNum: codes.num,
-      unitLet: codes.let,
+      name:      it.name || "",
+      article:   it.article || "",
+      brand:     it.brand || "",
+      model:     it.model || "",
+      maker:     it.maker || "",
+      country:   it.country || "",
+      countryA2: it.countryA2 || "",
+      countryNum:it.countryNum || "",
+      sources:   [it.source],
+      unitRaw:   it.unitRaw || "",
+      unitNum:   codes.num,
+      unitLet:   codes.let,
       qty:     it.qty,
       price:   price,
       total:   total,
@@ -1037,17 +1297,25 @@ function renderResult() {
     if (r.discrepancies.length) tr.title = r.discrepancies.join("\n");
     tr.innerHTML =
       `<td>${i + 1}</td>` +
+      `<td class="cell-file">${escapeHtml((r.sources || []).join("; "))}</td>` +
       `<td class="cell-name">${escapeHtml(r.name)}</td>` +
-      `<td>${r.unitNum}</td>` +
-      `<td>${r.unitLet}</td>` +
-      `<td>${fmt(r.qty, 3)}</td>` +
-      `<td>${fmt(r.price, 2)}</td>` +
-      `<td>${fmt(r.total, 2)}</td>` +
+      `<td class="cell-sm">${escapeHtml(r.brand || "")}</td>` +
+      `<td class="cell-sm">${escapeHtml(r.model || "")}</td>` +
       `<td class="cell-art">${escapeHtml(r.article)}</td>` +
-      `<td>${fmt(r.netUnit, 3)}</td>` +
-      `<td>${fmt(r.netTotal, 3)}</td>` +
-      `<td>${fmt(r.gross, 3)}</td>` +
-      `<td>${escapeHtml(r.places.join(", "))}</td>` +
+      `<td class="cell-sm">${escapeHtml(r.maker || "")}</td>` +
+      `<td class="cell-sm">${escapeHtml(r.country || "")}</td>` +
+      `<td class="cell-xs">${escapeHtml(r.countryA2 || "")}</td>` +
+      `<td class="cell-xs">${escapeHtml(r.countryNum || "")}</td>` +
+      `<td class="cell-sm">${escapeHtml(r.brand || "")}</td>` +
+      `<td class="cell-xs">${r.unitNum}</td>` +
+      `<td class="cell-xs">${r.unitLet}</td>` +
+      `<td class="cell-xs">${fmt(r.qty, 3)}</td>` +
+      `<td class="cell-xs">${fmt(r.price, 2)}</td>` +
+      `<td class="cell-xs">${fmt(r.total, 2)}</td>` +
+      `<td class="cell-xs">${fmt(r.netUnit, 3)}</td>` +
+      `<td class="cell-xs">${fmt(r.netTotal, 3)}</td>` +
+      `<td class="cell-xs">${fmt(r.gross, 3)}</td>` +
+      `<td class="cell-xs">${escapeHtml(r.places.join(", "))}</td>` +
       `<td class="cell-remark">${buildRemarkCell(r)}</td>` +
       `<td class="cell-tnved"></td>` +
       `<td class="cell-manual"></td>` +
@@ -1067,10 +1335,11 @@ function renderResult() {
   const netClass  = feErrs.some((e) => e.field === "netWeight")   ? ' class="cell-math-error"' : "";
   const grossClass= feErrs.some((e) => e.field === "grossWeight") ? ' class="cell-math-error"' : "";
   tfoot.innerHTML =
-    `<tr><td colspan="4">Итого</td>` +
-    `<td>${fmt(sums.qty, 3)}</td><td></td><td>${fmt(round2(sums.total), 2)}</td><td></td>` +
-    `<td></td><td${netClass}>${fmt(round3(sums.net), 3)}</td><td${grossClass}>${fmt(round3(sums.gross), 3)}</td><td></td>` +
-    `<td class="cell-remark">${feMsg ? `<span class="math-err">${escapeHtml(feMsg)}</span>` : ""}</td><td></td><td></td><td></td><td></td><td></td></tr>`;
+    `<tr><td colspan="3">Итого</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>` +
+    `<td class="cell-xs">${fmt(sums.qty, 3)}</td><td></td><td class="cell-xs">${fmt(round2(sums.total), 2)}</td>` +
+    `<td></td><td${netClass} class="cell-xs">${fmt(round3(sums.net), 3)}</td><td${grossClass} class="cell-xs">${fmt(round3(sums.gross), 3)}</td><td></td>` +
+    `<td class="cell-remark">${feMsg ? `<span class="math-err">${escapeHtml(feMsg)}</span>` : ""}</td>` +
+    `<td></td><td></td><td></td><td></td><td></td></tr>`;
 
   /* Предупреждения уровня файла (PDF-места, нечитаемые файлы) добавляем
      в замечания первой строки таблицы, чтобы не терялись. */
@@ -1107,24 +1376,32 @@ exportBtn.addEventListener("click", async () => {
   const ws = wb.addWorksheet("Товары", { views: [{ state: "frozen", ySplit: 1 }] });
 
   ws.columns = [
-    { header: "№ п/п",                              key: "n",      width: 7  },
-    { header: "Наименование товара",                key: "name",   width: 48 },
-    { header: "Код ед. изм. (цифровой)",            key: "unum",   width: 12 },
-    { header: "Код ед. изм. (буквенный)",           key: "ulet",   width: 12 },
-    { header: "Количество",                         key: "qty",    width: 12 },
-    { header: "Цена за единицу",                    key: "price",  width: 14 },
-    { header: "Общая стоимость",                    key: "total",  width: 15 },
-    { header: "Код изделия / артикул",              key: "art",    width: 18 },
-    { header: "Вес нетто за единицу, кг",           key: "netu",   width: 14 },
-    { header: "Общий вес нетто, кг",                key: "net",    width: 14 },
-    { header: "Общий вес брутто, кг",               key: "gross",  width: 14 },
-    { header: "№ грузового места",                  key: "place",  width: 14 },
-    { header: "Замечания заполнителя",               key: "comment",width: 42 },
-    { header: "Код ТН ВЭД ЕАЭС",                    key: "tnved",  width: 14 },
-    { header: "Описание 31гр.",                      key: "desc31", width: 36 },
-    { header: "Список РД",                           key: "rd",     width: 20 },
-    { header: "Комментарии ОТНИС",                   key: "cotn",   width: 28 },
-    { header: "Вопросы ОТНИС",                       key: "qotn",   width: 28 },
+    { header: "№ п/п",                    key: "n",        width: 6  },
+    { header: "Название файла загрузки",  key: "files",    width: 32 },
+    { header: "Наименование товара",      key: "name",     width: 40 },
+    { header: "Марка",                    key: "brand",    width: 14 },
+    { header: "Модель",                   key: "model",    width: 14 },
+    { header: "Код изделия / артикул",    key: "art",      width: 20 },
+    { header: "Изготовитель",             key: "maker",    width: 16 },
+    { header: "Страна происхождения",     key: "country",  width: 18 },
+    { header: "Буквенный код страны",     key: "ctryA2",   width: 10 },
+    { header: "Числовой код страны",      key: "ctryNum",  width: 10 },
+    { header: "Торговая марка",           key: "trademark",width: 14 },
+    { header: "Код ед. изм. (цифровой)", key: "unum",     width: 10 },
+    { header: "Код ед. изм. (буквенный)",key: "ulet",     width: 10 },
+    { header: "Количество",               key: "qty",      width: 10 },
+    { header: "Цена за единицу",          key: "price",    width: 13 },
+    { header: "Общая стоимость",          key: "total",    width: 14 },
+    { header: "Вес нетто за единицу, кг",key: "netu",     width: 12 },
+    { header: "Общий вес нетто, кг",      key: "net",      width: 12 },
+    { header: "Общий вес брутто, кг",     key: "gross",    width: 12 },
+    { header: "№ грузового места",        key: "place",    width: 10 },
+    { header: "Замечания заполнителя",    key: "comment",  width: 42 },
+    { header: "Код ТН ВЭД ЕАЭС",         key: "tnved",    width: 14 },
+    { header: "Описание 31гр.",           key: "desc31",   width: 36 },
+    { header: "Список РД",                key: "rd",       width: 20 },
+    { header: "Комментарии ОТНИС",        key: "cotn",     width: 28 },
+    { header: "Вопросы ОТНИС",            key: "qotn",     width: 28 },
   ];
 
   const head = ws.getRow(1);
@@ -1145,8 +1422,16 @@ exportBtn.addEventListener("click", async () => {
       netu: r.netUnit ?? "",
       net: r.netTotal ?? "",
       gross: r.gross ?? "",
-      place: r.places.join(", "),
-      comment: r.comment || "",
+      files:    (r.sources || []).join("; "),
+      brand:    r.brand    || "",
+      model:    r.model    || "",
+      maker:    r.maker    || "",
+      country:  r.country  || "",
+      ctryA2:   r.countryA2  || "",
+      ctryNum:  r.countryNum || "",
+      trademark:r.brand    || "",
+      place:    r.places.join(", "),
+      comment:  r.comment  || "",
       tnved: "", desc31: "", rd: "", cotn: "", qotn: "",
     });
     row.getCell("price").numFmt = "#,##0.00";
@@ -1167,15 +1452,15 @@ exportBtn.addEventListener("click", async () => {
 
   const last = ws.rowCount + 1;
   const totalRow = ws.getRow(last);
-  totalRow.getCell(1).value = "Итого";
-  totalRow.getCell(5).value  = { formula: `SUM(E2:E${last - 1})` };
-  totalRow.getCell(7).value  = { formula: `SUM(G2:G${last - 1})` };
-  totalRow.getCell(10).value = { formula: `SUM(J2:J${last - 1})` };
-  totalRow.getCell(11).value = { formula: `SUM(K2:K${last - 1})` };
+  totalRow.getCell(1).value  = "Итого";
+  totalRow.getCell(14).value = { formula: `SUM(N2:N${last - 1})` };  // Количество
+  totalRow.getCell(16).value = { formula: `SUM(P2:P${last - 1})` };  // Общая стоимость
+  totalRow.getCell(18).value = { formula: `SUM(R2:R${last - 1})` };  // Нетто
+  totalRow.getCell(19).value = { formula: `SUM(S2:S${last - 1})` };  // Брутто
   totalRow.font = { bold: true };
-  totalRow.getCell(10).numFmt = "0.000";
-  totalRow.getCell(11).numFmt = "0.000";
-  totalRow.getCell(7).numFmt  = "#,##0.00";
+  totalRow.getCell(18).numFmt = "0.000";
+  totalRow.getCell(19).numFmt = "0.000";
+  totalRow.getCell(16).numFmt = "#,##0.00";
 
   ws.eachRow((row) => row.eachCell({ includeEmpty: true }, (cell) => {
     cell.border = {
