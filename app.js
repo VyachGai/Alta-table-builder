@@ -100,7 +100,7 @@ const COUNTRIES = {
   "UK":{"a2":"GB","num":"826"},"UNITED KINGDOM":{"a2":"GB","num":"826"},
   "GREAT BRITAIN":{"a2":"GB","num":"826"},"USA":{"a2":"US","num":"840"},
   "UNITED STATES":{"a2":"US","num":"840"},"UZBEKISTAN":{"a2":"UZ","num":"860"},
-  "VENEZUELA":{"a2":"VE","num":"862"},"VIETNAM":{"a2":"VN","num":"704"},
+  "VENEZUELA":{"a2":"VE","num":"862"},"VIETNAM":{"a2":"VN","num":"704"},"VIET NAM":{"a2":"VN","num":"704"},"HONG-KONG":{"a2":"HK","num":"344"},"HONG KONG SAR":{"a2":"HK","num":"344"},
   "YEMEN":{"a2":"YE","num":"887"},
   /* Русские названия */
   "ГЕРМАНИЯ":{"a2":"DE","num":"276"},"РОССИЯ":{"a2":"RU","num":"643"},
@@ -244,22 +244,30 @@ function parseNameParts(raw) {
 /* ---------- Ключевые слова для поиска колонок --------------------------- */
 /* Порядок важен: более специфичные поля проверяются раньше. */
 const FIELD_PATTERNS = [
-  ["netUnit",  /нетто[^а-я]*(ед|за\s*ед|единиц)|вес\s*ед[^а-я]*нетто|net\s*weight\s*(per\s*)?(unit|pc)|unit\s*net/i],
-  ["netTotal", /нетто|net\s*w(eigh)?t|n\.?\s?w\.?(?![a-z])/i],
-  ["gross",    /брутто|gross\s*w(eigh)?t|g\.?\s?w\.?(?![a-z])/i],
-  ["price",    /цена|price|стоимость\s*(за\s*)?ед|rate(?!d)/i],
-  ["total",    /стоимост|сумма|amount|total\s*(price|value|cost)|итого\s*стоим|value/i],
-  ["qty",      /кол-?\s?во|количеств|qty|quantity|кол\.(?!\s*ед)/i],
-  ["unit",     /ед\.?\s?изм|единиц[аы]\s*измерени|^unit s?$|^ед\.?$|measure/i],
-  ["article",  /артикул|код\s*(изделия|товара)|изделие|article|part\s*(no|№|number)|item\s*(no|№|code)|sku|art\.?(?![a-z])|ref\.?\s*(no|№)?/i],
+  /* Порядковый номер строки — НЕ наименование */
+  ["serial",   /^(item|#|№|no\.?|поз\.?|п\/п)$/i],
+  /* Нетто за единицу — обязательно ДО netTotal */
+  ["netUnit",  /нетто[^а-яa-z]*(ед|за\s*ед|единиц)|вес\s*ед[^а-яa-z]*нетто|n\.w\.?\s*\/\s*pc|net\s*weight\s*(per\s*)?(unit|pcs?|each)|unit\s*net\s*weight/i],
+  ["netTotal", /total\s*n\.?w|нетто|net\s*w(eigh)?t(?!\s*(per|by|each|\/\s*pc))|\btotal\s+net\b/i],
+  ["gross",    /total\s*g\.?w|брутто|gross\s*w(eigh)?t|\btotal\s+gross\b|g\.?w\.?\s*\/\s*ctn/i],
+  ["price",    /цена|price(?!\s*list)|стоимость\s*(за\s*)?ед|rate(?!d)/i],
+  ["total",    /стоимост|сумма(?!\s*нал)|amount(?!\s*of)|total\s*(usd|eur|rub|price|value|cost)|итого\s*стоим/i],
+  ["qty",      /кол-?\s?во|количеств|\btotal\s+(qty|quantity)\b|qty\/?(\s*pcs?|total|box|ctn)?|\bquantity\b|кол\.(?!\s*ед)/i],
+  ["unit",     /ед\.?\s?изм|единиц[аы]\s*измерени|^unit\s*(of\s*meas)?$|^ед\.?$|unit\s*of\s*measure/i],
+  /* ТНВЭД / HTS Code */
+  ["tnved",    /тн\s*вэд|hs\s*code|hts\s*code|harmonized|таможенн\w*\s*код|код\s*тн/i],
+  /* Нотификация */
+  ["notify",   /нотификаци|notification|cert(ificate)?\s*(no|#|number)?$/i],
+  /* Артикул / код изделия */
+  ["article",  /артикул|код\s*(изделия|товара|продукта)|product\s*(code|no\.?|#|id)|изделие|article|part\s*(no|№|number)|item\s*(no|№|code|id)|sku|art\.?(?![a-z])|ref\.?\s*(no|№)?/i],
   ["brand",    /^(бренд|торгов\w*\s*марк|trade\s*mark|trademark)$/i],
-  /* "Brand / Country of Origin" — смешанная колонка: данные разбираем ниже */
   ["brandcountry", /brand[^а-яa-z]*country|country[^а-яa-z]*origin|brand\s*\n/i],
-  ["model",    /модель|model/i],
+  ["model",    /модель|model(?!\s*(no|#|code))/i],
   ["maker",    /изготовитель|производитель|manufacturer|made\s*by/i],
-  ["country",  /страна\s*(происхождения|изготовлен|origin)?|country\s*(of\s*)?(origin|manufacture)?/i],
-  ["place",    /груз\w*\s*мест|мест[оа]\s*№?|№\s*мест|place|package\s*(no|№|number)?|box\s*(no|№|number)?|carton|кор(об|обк)\w*|паллет|pallet|case\s*(no|№)/i],
-  ["name",     /наименован|назван|описан|товар|description|goods|name|item(?!\s*(no|№|code))|product|commodity/i],
+  ["country",  /страна\s*(происхождения|изготовлен|origin)?|coo(?!\s*[a-z])|country\s*(of\s*)?(origin|manufacture)?|origin(?!\s*price)/i],
+  ["place",    /груз\w*\s*мест|мест[оа]\s*№?|№\s*мест|place|package\s*(no|№|number)?|box\s*(no\.?|№|number)?|carton|кор(об|обк)\w*|паллет|pallet|case\s*(no|№)/i],
+  /* Наименование — в ПОСЛЕДНЮЮ очередь */
+  ["name",     /наименован|назван|описан|товар|description|goods|^name$|product(?!\s*(code|no\.?|#|id))|^product$|commodity/i],
 ];
 
 function detectField(headerText) {
@@ -311,7 +319,8 @@ const isDocTrailerStart = (cells) => {
 };
 /* Заглушки вида «--», «—», «n/a» считаем пустым значением. */
 const cleanVal = (v) => {
-  const s = String(v ?? "").trim();
+  if (v === undefined || v === null) return "";
+  const s = String(v).trim();
   return /^[-–—_.\s]*$|^(n\/?a|нет|б\/н)$/i.test(s) ? "" : s;
 };
 const hasLetters = (s) => /[A-Za-zА-Яа-яЁё]{3,}/.test(String(s || ""));
@@ -408,22 +417,96 @@ async function readSpreadsheet(file) {
 
 /* Поиск строки заголовка и извлечение данных из двумерного массива. */
 function extractFromGrid(rows, fileName) {
-  let headerIdx = -1, colMap = null, bestScore = 0;
-  /* Шапка документа (реквизиты, адреса) может занимать десятки строк —
-     ищем строку заголовка таблицы по всему листу. */
+  let headerIdx = -1, colMap = null, colMapAll = null, bestScore = 0;
   for (let r = 0; r < rows.length; r++) {
-    const map = {};
+    const map = {}, mapAll = {};  // map = first per field, mapAll = all per field
     let score = 0;
     rows[r].forEach((cell, c) => {
       const f = detectField(cell);
-      if (f && !(f in map)) { map[f] = c; score++; }
+      if (f) {
+        if (!(f in mapAll)) { mapAll[f] = []; }
+        mapAll[f].push(c);
+        if (!(f in map)) { map[f] = c; score++; }
+      }
     });
-    if (score >= 2 && score > bestScore) { bestScore = score; headerIdx = r; colMap = map; }
+    if (score >= 2 && score > bestScore) { bestScore = score; headerIdx = r; colMap = map; colMapAll = mapAll; }
   }
   if (headerIdx < 0) return [];
 
+  /* Двухстрочный заголовок: если строка ПЕРЕД headerIdx тоже содержит
+     распознаваемые поля — объединяем с текущим colMap:
+     для колонок qty/gross/netTotal берём строку, где есть слово "total" */
+  if (headerIdx > 0) {
+    const prevRow = rows[headerIdx - 1];
+    const prevFields = {};
+    prevRow.forEach((cell, c) => {
+      const f = detectField(cell);
+      if (f) {
+        if (!prevFields[f]) prevFields[f] = [];
+        prevFields[f].push({ c, h: String(cell || "").trim().toLowerCase() });
+      }
+    });
+    /* Для каждого поля из prevRow: если в colMap уже есть это поле,
+       но в prevRow есть вариант с "total" — используем его */
+    for (const [f, entries] of Object.entries(prevFields)) {
+      const totalEntry = entries.find((e) => /total/.test(e.h));
+      if (totalEntry && ["qty", "netTotal", "gross"].includes(f)) {
+        colMap[f] = totalEntry.c;
+      } else if (!(f in colMap)) {
+        colMap[f] = entries[0].c;
+      }
+    }
+  }
+
+    /* Постобработка colMap: устраняем неоднозначности */
+  if (colMap && colMapAll) {
+    const hRow = rows[headerIdx];
+    /* Все колонки с полем "name" */
+    const allNameCols = colMapAll["name"] || [];
+    if (allNameCols.length > 1) {
+      /* Ищем колонку "PRODUCT" без code/no — это артикул */
+      let productCol = -1, descCol = -1;
+      for (const c of allNameCols) {
+        const h = String(hRow[c] || "").trim().toLowerCase();
+        if (/^product$|^продукт$/.test(h)) productCol = c;
+        else if (/description|описан/.test(h)) descCol = c;
+      }
+      if (productCol >= 0) {
+        if (!("article" in colMap)) colMap["article"] = productCol;
+        colMap["name"] = descCol >= 0 ? descCol : allNameCols.find((c) => c !== productCol) || allNameCols[0];
+      }
+    }
+    /* "COO" (только 3 буквы) в строке заголовка → country */
+    if (!("country" in colMap)) {
+      hRow.forEach((cell, c) => {
+        if (/^coo$/i.test(String(cell || "").trim())) colMap["country"] = c;
+      });
+    }
+    /* Total QTY при наличии qty/ctns — берём Total QTY как основное qty */
+    if (colMapAll["qty"] && colMapAll["qty"].length > 1) {
+      for (const c of colMapAll["qty"]) {
+        const h = String(hRow[c] || "").trim().toLowerCase();
+        if (/total/.test(h)) { colMap["qty"] = c; break; }
+      }
+    }
+    /* Total G.W — берём вместо G.W/CTN (вес партии, не коробки) */
+    if (colMapAll["gross"] && colMapAll["gross"].length > 1) {
+      for (const c of colMapAll["gross"]) {
+        const h = String(hRow[c] || "").trim().toLowerCase();
+        if (/total/.test(h)) { colMap["gross"] = c; break; }
+      }
+    }
+    /* Total N.W — аналогично */
+    if (colMapAll["netTotal"] && colMapAll["netTotal"].length > 1) {
+      for (const c of colMapAll["netTotal"]) {
+        const h = String(hRow[c] || "").trim().toLowerCase();
+        if (/total/.test(h)) { colMap["netTotal"] = c; break; }
+      }
+    }
+  }
+
   const items = [];
-  let lastPlace = ""; // № места часто указан только на первой строке места — наследуем вниз
+  let lastPlace = "";
   for (let r = headerIdx + 1; r < rows.length; r++) {
     const row = rows[r];
     const get = (f) => (f in colMap ? row[colMap[f]] : "");
@@ -457,7 +540,9 @@ function extractFromGrid(rows, fileName) {
     const brandRaw_raw = cleanVal(get("brand"));
     const makerRaw     = cleanVal(get("maker"));
     const countryRaw_raw = cleanVal(get("country"));
-    const modelRaw     = cleanVal(get("model"));
+    const modelRaw     = cleanVal(get("model")).replace(/[\n\r]+/g, " ").trim();
+    const tnvedRaw   = cleanVal(get("tnved"));
+    const notifyRaw  = cleanVal(get("notify"));
     /* "Brand\nCountry of Origin" — смешанная колонка Agricos PL:
        значение "GERMANY" → страна; "FAG\nGERMANY" → бренд + страна */
     const bcRaw = cleanVal(get("brandcountry"));
@@ -489,10 +574,20 @@ function extractFromGrid(rows, fileName) {
     const brandCandid = brandRaw && !countryByName(brandRaw).a2 ? brandRaw : "";
     const finalBrand  = brandCandid || artParsed.brand || nameParsed.brand || "";
     const finalModel  = modelRaw || nameParsed.model || "";
-    const finalMaker  = makerRaw || "";
-    /* Страна: берём из countryRaw */
-    const countryInfo = countryByName(countryRaw || "");
-    const finalCountryName = countryInfo.name || (countryRaw && !countryByName(countryRaw).a2 ? "" : countryRaw) || "";
+    const finalMaker = makerRaw ? makerRaw.split(",")[0].trim() : "";
+    /* Страна: убираем суффикс "X/ Страна" (Vietnam/ Вьетнам → Вьетнам) */
+    const countryRawClean = (() => {
+      if (!countryRaw) return "";
+      const sl = countryRaw.indexOf("/");
+      if (sl >= 0) { const af = countryRaw.slice(sl + 1).trim(); return af || countryRaw.slice(0, sl).trim(); }
+      return countryRaw.trim();
+    })();
+    const countryInfo = countryByName(countryRawClean);
+    const countryInfoFb = countryInfo.a2 ? countryInfo
+      : countryByName(countryRaw && countryRaw.indexOf("/") >= 0 ? countryRaw.slice(0, countryRaw.indexOf("/")).trim() : "");
+    const finalCountryName = countryRawClean || "";
+    const finalCountryA2   = countryInfo.a2  || countryInfoFb.a2  || "";
+    const finalCountryNum  = countryInfo.num || countryInfoFb.num || "";
     /* Артикул: очищаем от бренда если он был в хвосте */
     const cleanArticle = artParsed.cleanName || article;
 
@@ -500,7 +595,9 @@ function extractFromGrid(rows, fileName) {
       source: fileName,
       name, article: cleanArticle,
       brand: finalBrand, model: finalModel, maker: finalMaker,
-      country: finalCountryName, countryA2: countryInfo.a2, countryNum: countryInfo.num,
+      country: finalCountryName, countryA2: finalCountryA2, countryNum: finalCountryNum,
+      tnved:  tnvedRaw  || "",
+      notify: notifyRaw || "",
       unitRaw,
       qty:      _qty,
       price:    _price,
@@ -1003,6 +1100,8 @@ function mergeItems(allItems) {
       country:   pick((p) => p.country) || "",
       countryA2: pick((p) => p.countryA2) || "",
       countryNum:pick((p) => p.countryNum) || "",
+      tnved:     pick((p) => p.tnved)    || "",
+      notify:    pick((p) => p.notify)   || "",
       sources:   [...new Set(parts.map((p) => p.source))],
       unitRaw, unitNum: codes.num, unitLet: codes.let,
       qty, price, total: totalC,
@@ -1211,6 +1310,8 @@ function buildRowByRow(allItems) {
       country:   it.country || "",
       countryA2: it.countryA2 || "",
       countryNum:it.countryNum || "",
+      tnved:     it.tnved  || "",
+      notify:    it.notify || "",
       sources:   [it.source],
       unitRaw:   it.unitRaw || "",
       unitNum:   codes.num,
