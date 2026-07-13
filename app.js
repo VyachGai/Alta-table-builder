@@ -725,13 +725,12 @@ async function readPdf(file) {
   /* Детекция скана: если текстовых фрагментов нет или почти нет — PDF является изображением */
   if (totalFrags < 5) {
     throw new Error(
-      `«${file.name}» является отсканированным документом без текстового слоя — ` +
-      `программа не может извлечь данные напрямую. ` +
-      `Для обработки скана выполните распознавание текста (OCR): ` +
-      `откройте файл в Adobe Acrobat → Инструменты → Распознать текст, ` +
-      `или воспользуйтесь онлайн-сервисом (smallpdf.com, ilovepdf.com, online2pdf.com → OCR), ` +
-      `затем сохраните результат как PDF с текстовым слоем, Word (.docx) или Excel (.xlsx) ` +
-      `и загрузите в программу снова.`
+      `SCAN:«${file.name}» является отсканированным документом без текстового слоя.\n` +
+      `Памятка для работы со сканами:\n` +
+      `1. Открыть https://www.ilovepdf.com/ocr-pdf\n` +
+      `2. Загрузить скан → выбрать язык «Russian + English» → Convert\n` +
+      `3. Скачать PDF с текстовым слоем\n` +
+      `4. Загрузить в программу как обычный PDF`
     );
   }
   return extractFromPdfPages(pages, file.name);
@@ -1240,17 +1239,50 @@ buildBtn.addEventListener("click", async () => {
     if (!all.length) {
       /* Если есть notes (например, сообщение о скане) — показываем их, а не стандартную ошибку */
       if (state.notes.length) {
-        /* Выводим первое примечание в строку статуса */
-        setStatus(state.notes[0], true);
-        /* Остальные примечания показываем в блоке под кнопками */
+        setStatus(state.notes[0].startsWith("SCAN:") ? "Файл является сканом — см. памятку ниже." : state.notes[0], true);
         const notesEl = $("notes");
         if (notesEl) {
           notesEl.innerHTML = "";
           for (const n of state.notes) {
-            const p = document.createElement("p");
-            p.style.cssText = "color:#A33B2E;font-size:.85rem;margin:8px 0;line-height:1.5";
-            p.textContent = "⚠ " + n;
-            notesEl.appendChild(p);
+            if (n.startsWith("SCAN:")) {
+              /* Скан: рендерим памятку с кликабельной ссылкой */
+              const body = n.slice(5); // убираем префикс "SCAN:"
+              const lines = body.split("\n").filter(Boolean);
+              const wrap = document.createElement("div");
+              wrap.style.cssText = "border:1px solid #C0392B;border-radius:6px;padding:14px 18px;background:#FFF5F5;margin:8px 0";
+              const title = document.createElement("p");
+              title.style.cssText = "margin:0 0 10px;font-weight:600;color:#A33B2E";
+              title.textContent = lines[0]; // «файл является сканом...»
+              wrap.appendChild(title);
+              const memo = document.createElement("p");
+              memo.style.cssText = "margin:0 0 8px;font-weight:600;color:#1C2A33";
+              memo.textContent = "Памятка для работы со сканами:";
+              wrap.appendChild(memo);
+              const ol = document.createElement("ol");
+              ol.style.cssText = "margin:0;padding-left:20px;color:#1C2A33;line-height:1.8";
+              for (const step of lines.slice(1)) {
+                const li = document.createElement("li");
+                /* Заменяем URL на кликабельную ссылку */
+                const urlRe = /https?:\/\/[^\s]+/g;
+                let last = 0, html = "";
+                let m;
+                while ((m = urlRe.exec(step)) !== null) {
+                  html += escapeHtml(step.slice(last, m.index));
+                  html += `<a href="${m[0]}" target="_blank" rel="noopener" style="color:#4C43B3;font-weight:600">${m[0]}</a>`;
+                  last = m.index + m[0].length;
+                }
+                html += escapeHtml(step.slice(last));
+                li.innerHTML = html;
+                ol.appendChild(li);
+              }
+              wrap.appendChild(ol);
+              notesEl.appendChild(wrap);
+            } else {
+              const p = document.createElement("p");
+              p.style.cssText = "color:#A33B2E;font-size:.85rem;margin:8px 0;line-height:1.5";
+              p.textContent = "⚠ " + n;
+              notesEl.appendChild(p);
+            }
           }
           $("result-panel").hidden = false;
         }
