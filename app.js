@@ -857,7 +857,18 @@ function extractFromPdfPages(pages, fileName) {
   if (Object.keys(map).length < 2) return [];
 
   const bounds = [-Infinity];
-  for (let i = 1; i < colsArr.length; i++) bounds.push((colsArr[i - 1].x1 + colsArr[i].x0) / 2);
+  for (let i = 1; i < colsArr.length; i++) {
+    const prev = colsArr[i - 1], cur = colsArr[i];
+    const prevWidth = prev.x1 - prev.x0;
+    const gap = cur.x0 - prev.x1;
+    /* Если предыдущая колонка узкая (напр. «№»/NO), а разрыв до следующей
+       широкий (заголовок широкой текстовой колонки часто стоит по центру,
+       далеко от начала данных) — граница midpoint окажется слишком далеко
+       вправо, и короткие строки данных широкой колонки попадут в узкую
+       предыдущую. Ставим границу ближе к концу узкой колонки. */
+    if (prevWidth < 30 && gap > 60) bounds.push(prev.x1 + Math.min(gap * 0.25, 20));
+    else bounds.push((prev.x1 + cur.x0) / 2);
+  }
   bounds.push(Infinity);
   const colOf = (f) => {
     const cx = f.x + f.w / 2;
@@ -1004,6 +1015,37 @@ function extractFromText(text, fileName) {
 }
 
 /* ---------- Объединение и сверка ----------------------------------------- */
+/* ---------- Нечёткое сравнение наименований -------------------------------
+   Некоторые PDF (особенно с нестандартным встроенным шрифтом) искажают текст
+   при извлечении: лигатуры «fi», «ti», «li» превращаются в одну неверную
+   букву (например «Lining» → «LCnCng»). Из-за этого одинаковый товар в двух
+   документах получает чуть разные наименования, и точное сравнение строк
+   не группирует их. Используем расстояние Левенштейна как запасной критерий:
+   если строки совпадают почти полностью (отличается пара символов на фоне
+   длинного текста) — считаем их одним товаром.                            */
+function levenshteinDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = new Array(n + 1);
+  let curr = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n];
+}
+function nameSimilarity(a, b) {
+  const maxLen = Math.max(a.length, b.length, 1);
+  return 1 - levenshteinDistance(a, b) / maxLen;
+}
+const FUZZY_THRESHOLD = 0.82; // допускаем ~18% отличающихся символов (искажения шрифта)
+
 function mergeItems(allItems) {
   /* 1. Внутри файла: объединяем дубликаты по (наименование+артикул+место). */
   const perFile = new Map(); // file → Map(key → item)
@@ -1048,6 +1090,56 @@ function mergeItems(allItems) {
         const sub = nkey + "|" + normKey(p.article);
         if (!byGoods.has(sub)) byGoods.set(sub, []);
         byGoods.get(sub).push(p);
+      }
+    }
+  }
+
+  /* Нечёткое дослияние: группы, встречающиеся только в ОДНОМ файле («сироты»),
+     пытаемся сопоставить с сиротами из ДРУГИХ файлов по схожести наименования.
+     Актуально когда PDF одного из документов искажает текст (лигатуры шрифта)
+     и/или добавляет общий суффикс бренда, которого нет в другом документе. */
+  {
+    /* Общий «шумовой» суффикс (марка/бренд), который может присутствовать
+       в одном документе и отсутствовать в другом — убираем перед сравнением. */
+    const stripNoise = (s) => s.replace(/\s*\btrebu\b\s*$/i, "").trim();
+
+    const allSources = new Set(allItems.map((it) => it.source));
+    if (allSources.size > 1) {
+      const orphanKeys = [];
+      for (const [key, parts] of byGoods) {
+        const srcSet = new Set(parts.map((p) => p.source));
+        if (srcSet.size === 1) orphanKeys.push(key);
+      }
+      const candidates = [];
+      for (let i = 0; i < orphanKeys.length; i++) {
+        const partsA = byGoods.get(orphanKeys[i]);
+        const srcA = partsA[0].source;
+        const nameA = stripNoise(normKey(partsA[0].name));
+        const qtyA = partsA.reduce((s, p) => (p.qty !== null ? s + p.qty : s), 0) || null;
+        for (let j = i + 1; j < orphanKeys.length; j++) {
+          const partsB = byGoods.get(orphanKeys[j]);
+          const srcB = partsB[0].source;
+          if (srcA === srcB) continue; // сравниваем только сирот из разных файлов
+          /* Защита от ложных совпадений: если qty известен у обеих сторон,
+             он ДОЛЖЕН совпадать — иначе это разные товары со схожим названием
+             (например «Connector male stud» и «Connector male stud - GE-10LRED-1/8»). */
+          const qtyB = partsB.reduce((s, p) => (p.qty !== null ? s + p.qty : s), 0) || null;
+          if (qtyA !== null && qtyB !== null && qtyA !== qtyB) continue;
+          const nameB = stripNoise(normKey(partsB[0].name));
+          const sim = nameSimilarity(nameA, nameB);
+          if (sim >= FUZZY_THRESHOLD) candidates.push({ i, j, sim });
+        }
+      }
+      candidates.sort((a, b) => b.sim - a.sim);
+      const used = new Set();
+      for (const { i, j } of candidates) {
+        if (used.has(i) || used.has(j)) continue;
+        const keyA = orphanKeys[i], keyB = orphanKeys[j];
+        const merged = [...byGoods.get(keyA), ...byGoods.get(keyB)];
+        byGoods.delete(keyA);
+        byGoods.delete(keyB);
+        byGoods.set(keyA + "~fuzzy~" + keyB, merged);
+        used.add(i); used.add(j);
       }
     }
   }
