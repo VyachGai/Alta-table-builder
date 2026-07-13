@@ -244,8 +244,9 @@ function parseNameParts(raw) {
 /* ---------- Ключевые слова для поиска колонок --------------------------- */
 /* Порядок важен: более специфичные поля проверяются раньше. */
 const FIELD_PATTERNS = [
-  /* Порядковый номер строки — НЕ наименование */
-  ["serial",   /^(item|#|№|no\.?|поз\.?|п\/п)$/i],
+  /* Порядковый номер строки — НЕ наименование.
+     "ITEM" само по себе = наименование товара (не порядковый номер). */
+  ["serial",   /^(item\s*(no\.?|№|number|#)|#|№|no\.?|поз\.?|п\/п)$/i],
   /* Нетто за единицу — обязательно ДО netTotal */
   ["netUnit",  /нетто[^а-яa-z]*(ед|за\s*ед|единиц)|вес\s*ед[^а-яa-z]*нетто|n\.w\.?\s*\/\s*pc|net\s*weight\s*(per\s*)?(unit|pcs?|each)|unit\s*net\s*weight/i],
   ["netTotal", /total\s*n\.?w|нетто|net\s*w(eigh)?t(?!\s*(per|by|each|\/\s*pc))|\btotal\s+net\b/i],
@@ -267,7 +268,7 @@ const FIELD_PATTERNS = [
   ["country",  /страна\s*(происхождения|изготовлен|origin)?|coo(?!\s*[a-z])|country\s*(of\s*)?(origin|manufacture)?|origin(?!\s*price)/i],
   ["place",    /груз\w*\s*мест|мест[оа]\s*№?|№\s*мест|place|package\s*(no|№|number)?|box\s*(no\.?|№|number)?|carton|кор(об|обк)\w*|паллет|pallet|case\s*(no|№)/i],
   /* Наименование — в ПОСЛЕДНЮЮ очередь */
-  ["name",     /наименован|назван|описан|товар|description|goods|^name$|product(?!\s*(code|no\.?|#|id))|^product$|commodity/i],
+  ["name",     /наименован|назван|описан|товар|description|goods|^name$|^item$|product(?!\s*(code|no\.?|#|id))|^product$|commodity/i],
 ];
 
 function detectField(headerText) {
@@ -451,10 +452,13 @@ function extractFromGrid(rows, fileName) {
     for (const [f, entries] of Object.entries(prevFields)) {
       const totalEntry = entries.find((e) => /total/.test(e.h));
       if (totalEntry && ["qty", "netTotal", "gross"].includes(f)) {
+        /* Есть явный "total" вариант — берём его */
         colMap[f] = totalEntry.c;
       } else if (!(f in colMap)) {
+        /* Поле не найдено в основной строке заголовка — добавляем из предыдущей */
         colMap[f] = entries[0].c;
       }
+      /* Если поле уже есть в colMap — не перезаписываем (основная строка приоритетнее) */
     }
   }
 
@@ -783,7 +787,10 @@ function extractFromPdfPages(pages, fileName) {
   const headerBottomY = hLines[hLines.length - 1].y;
 
   /* 2. Колонки: кластеризация ячеек заголовочного блока по пересечению x. */
-  const hCells = hLines.flatMap((L) => L.cells.map((c) => ({ ...c, y: L.y })));
+  /* Строка перед заголовком (напр. "QTY" над "ITEM") → в колоночную сетку */
+  const hPrv = hi > 0 ? pageLines[hp][hi - 1] : null;
+  const hPrvC = hPrv ? hPrv.cells.map((c) => ({ ...c, y: hPrv.y })) : [];
+  const hCells = [...hPrvC, ...hLines.flatMap((L) => L.cells.map((c) => ({ ...c, y: L.y })))];
   const colsArr = [];
   for (const c of hCells.sort((a, b) => a.x - b.x)) {
     const col = colsArr.find((k) => c.x < k.x1 + 3 && c.x + c.w > k.x0 - 3);
