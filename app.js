@@ -709,6 +709,7 @@ async function readPdf(file) {
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
   const pages = [];
+  let totalFrags = 0;
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const vp = page.getViewport({ scale: 1 });
@@ -718,7 +719,20 @@ async function readPdf(file) {
       if (!it.str || !it.str.trim()) continue;
       frags.push({ x: it.transform[4], y: it.transform[5], w: it.width || it.str.length * 4, str: it.str });
     }
+    totalFrags += frags.length;
     pages.push({ h: vp.height, frags });
+  }
+  /* Детекция скана: если текстовых фрагментов нет или почти нет — PDF является изображением */
+  if (totalFrags < 5) {
+    throw new Error(
+      `«${file.name}» является отсканированным документом без текстового слоя — ` +
+      `программа не может извлечь данные напрямую. ` +
+      `Для обработки скана выполните распознавание текста (OCR): ` +
+      `откройте файл в Adobe Acrobat → Инструменты → Распознать текст, ` +
+      `или воспользуйтесь онлайн-сервисом (smallpdf.com, ilovepdf.com, online2pdf.com → OCR), ` +
+      `затем сохраните результат как PDF с текстовым слоем, Word (.docx) или Excel (.xlsx) ` +
+      `и загрузите в программу снова.`
+    );
   }
   return extractFromPdfPages(pages, file.name);
 }
