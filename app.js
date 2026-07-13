@@ -1223,7 +1223,8 @@ buildBtn.addEventListener("click", async () => {
   const mode = $("mode-select") ? $("mode-select").value : "merge";
   try {
     const all = [];
-    const footerErrors = []; // ошибки итогов файлов (нетто/брутто footer vs сумма строк)
+    const footerErrors = [];
+    const scanNotes = []; // ошибки итогов файлов (нетто/брутто footer vs сумма строк)
     for (const f of state.files) {
       setStatus(`Обрабатываю: ${f.name}`);
       try {
@@ -1232,62 +1233,56 @@ buildBtn.addEventListener("click", async () => {
         if (items._footerErrors) footerErrors.push(...items._footerErrors.map((e) => ({ ...e, source: items._footerSource })));
         all.push(...items);
       } catch (err) {
-        state.notes.push(`Файл «${f.name}» не прочитан: ${err.message}`);
+        if (err.message.startsWith("SCAN:")) {
+          scanNotes.push(err.message); // скан — особый рендеринг
+        } else {
+          state.notes.push(`Файл «${f.name}» не прочитан: ${err.message}`);
+        }
       }
     }
     state.notes.push(...pdfWarnings);
     if (!all.length) {
-      /* Если есть notes (например, сообщение о скане) — показываем их, а не стандартную ошибку */
-      if (state.notes.length) {
-        setStatus(state.notes[0].startsWith("SCAN:") ? "Файл является сканом — см. памятку ниже." : state.notes[0], true);
-        const notesEl = $("notes");
-        if (notesEl) {
-          notesEl.innerHTML = "";
-          for (const n of state.notes) {
-            if (n.startsWith("SCAN:")) {
-              /* Скан: рендерим памятку с кликабельной ссылкой */
-              const body = n.slice(5); // убираем префикс "SCAN:"
-              const lines = body.split("\n").filter(Boolean);
-              const wrap = document.createElement("div");
-              wrap.style.cssText = "border:1px solid #C0392B;border-radius:6px;padding:14px 18px;background:#FFF5F5;margin:8px 0";
-              const title = document.createElement("p");
-              title.style.cssText = "margin:0 0 10px;font-weight:600;color:#A33B2E";
-              title.textContent = lines[0]; // «файл является сканом...»
-              wrap.appendChild(title);
-              const memo = document.createElement("p");
-              memo.style.cssText = "margin:0 0 8px;font-weight:600;color:#1C2A33";
-              memo.textContent = "Памятка для работы со сканами:";
-              wrap.appendChild(memo);
-              const ol = document.createElement("ol");
-              ol.style.cssText = "margin:0;padding-left:20px;color:#1C2A33;line-height:1.8";
-              for (const step of lines.slice(1)) {
-                const li = document.createElement("li");
-                /* Заменяем URL на кликабельную ссылку */
-                const urlRe = /https?:\/\/[^\s]+/g;
-                let last = 0, html = "";
-                let m;
-                while ((m = urlRe.exec(step)) !== null) {
-                  html += escapeHtml(step.slice(last, m.index));
-                  html += `<a href="${m[0]}" target="_blank" rel="noopener" style="color:#4C43B3;font-weight:600">${m[0]}</a>`;
-                  last = m.index + m[0].length;
-                }
-                html += escapeHtml(step.slice(last));
-                li.innerHTML = html;
-                ol.appendChild(li);
-              }
-              wrap.appendChild(ol);
-              notesEl.appendChild(wrap);
-            } else {
-              const p = document.createElement("p");
-              p.style.cssText = "color:#A33B2E;font-size:.85rem;margin:8px 0;line-height:1.5";
-              p.textContent = "⚠ " + n;
-              notesEl.appendChild(p);
+      const notesEl = $("notes");
+      if (scanNotes.length && notesEl) {
+        setStatus("Файл является сканом без текстового слоя — см. памятку ниже.", true);
+        notesEl.innerHTML = "";
+        for (const n of scanNotes) {
+          const body = n.slice(5);
+          const lines = body.split("\n").filter(Boolean);
+          const wrap = document.createElement("div");
+          wrap.style.cssText = "border:1px solid #C0392B;border-radius:6px;padding:14px 18px;background:#FFF5F5;margin:8px 0";
+          const title = document.createElement("p");
+          title.style.cssText = "margin:0 0 10px;color:#A33B2E";
+          title.textContent = "\u26A0 " + lines[0];
+          wrap.appendChild(title);
+          const memo = document.createElement("p");
+          memo.style.cssText = "margin:0 0 8px;font-weight:600;color:#1C2A33";
+          memo.textContent = "\u041F\u0430\u043C\u044F\u0442\u043A\u0430 \u0434\u043B\u044F \u0440\u0430\u0431\u043E\u0442\u044B \u0441\u043E \u0441\u043A\u0430\u043D\u0430\u043C\u0438:";
+          wrap.appendChild(memo);
+          const ol = document.createElement("ol");
+          ol.style.cssText = "margin:0;padding-left:20px;color:#1C2A33;line-height:2";
+          for (const step of lines.slice(1)) {
+            const li = document.createElement("li");
+            const urlRe = /https?:\/\/[^\s]+/g;
+            let last = 0, html = "";
+            let m;
+            while ((m = urlRe.exec(step)) !== null) {
+              html += escapeHtml(step.slice(last, m.index));
+              html += '<a href="' + m[0] + '" target="_blank" rel="noopener" style="color:#4C43B3;font-weight:600;text-decoration:underline">' + m[0] + '</a>';
+              last = m.index + m[0].length;
             }
+            html += escapeHtml(step.slice(last));
+            li.innerHTML = html;
+            ol.appendChild(li);
           }
-          $("result-panel").hidden = false;
+          wrap.appendChild(ol);
+          notesEl.appendChild(wrap);
         }
+        $("result-panel").hidden = false;
+      } else if (state.notes.length) {
+        setStatus(state.notes[0], true);
       } else {
-        setStatus("Данные о товарах не найдены ни в одном файле.", true);
+        setStatus("\u0414\u0430\u043D\u043D\u044B\u0435 \u043E \u0442\u043E\u0432\u0430\u0440\u0430\u0445 \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u044B \u043D\u0438 \u0432 \u043E\u0434\u043D\u043E\u043C \u0444\u0430\u0439\u043B\u0435.", true);
       }
       buildBtn.disabled = false;
       return;
