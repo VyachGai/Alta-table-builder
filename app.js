@@ -278,6 +278,178 @@ function detectField(headerText) {
   return null;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   ИИ-РАСПОЗНАВАНИЕ (Claude API)
+   Две задачи:
+   1. aiDetectFields — определить какое поле (qty/price/name/…) скрывается
+      за каждым заголовком таблицы
+   2. aiParseNameParts — разбить наименование товара на части
+      (наименование / марка / модель)
+
+   Архитектурные принципы:
+   • Кэш в памяти — одинаковые запросы не дублируются
+   • Плавная деградация — если API недоступен, используем локальную логику
+   • Батчинг — все заголовки одной таблицы отправляются одним запросом
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const _aiFieldCache   = new Map(); // JSON.stringify(headers) → {field1, field2, …}
+const _aiNameCache    = new Map(); // raw name → {cleanName, brand, model}
+
+/* Список допустимых полей с расшифровкой для промпта */
+const FIELD_DESCRIPTIONS = {
+  serial:       "порядковый номер строки (No., №, Item)",
+  name:         "наименование товара (Description, Goods, Наименование, товар)",
+  article:      "артикул / код изделия (Part No, Article, Артикул, Код изделия)",
+  qty:          "количество (Qty, Quantity, Кол-во, Количество)",
+  unit:         "единица измерения (Unit, Ед. изм.)",
+  price:        "цена за единицу (Price, Unit Price, Цена)",
+  total:        "общая стоимость / сумма (Amount, Total, Сумма, Стоимость)",
+  netUnit:      "вес нетто за единицу (Net Weight per unit, Нетто ед.)",
+  netTotal:     "общий вес нетто (Net Weight, N.W., Нетто общий)",
+  gross:        "общий вес брутто (Gross Weight, G.W., Брутто)",
+  place:        "номер грузового места (Package No, Box No, № места)",
+  country:      "страна происхождения (Country of Origin, COO, Страна)",
+  maker:        "изготовитель / производитель (Manufacturer, Изготовитель)",
+  model:        "модель (Model, Модель)",
+  brand:        "торговая марка / бренд (Brand, Trade Mark)",
+  tnved:        "код ТН ВЭД / HS Code (HTS Code, ТНВЭД)",
+  notify:       "нотификация / сертификат (Notification, Certificate No)",
+};
+
+async function _callClaude(prompt, maxTokens = 500) {
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: maxTokens,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!resp.ok) throw new Error("Claude API: " + resp.status);
+  const data = await resp.json();
+  return data.content.map(b => b.text || "").join("").trim();
+}
+
+/**
+ * Определяет семантику каждого заголовка таблицы через Claude.
+ * @param {string[]} headers — массив заголовков (до 30)
+ * @returns {Promise<Object>} — { "Наименование": "name", "Qty": "qty", … }
+ */
+async function aiDetectFields(headers) {
+  const key = JSON.stringify(headers);
+  if (_aiFieldCache.has(key)) return _aiFieldCache.get(key);
+
+  const fieldList = Object.entries(FIELD_DESCRIPTIONS)
+    .map(([k, v]) => `  "${k}" — ${v}`)
+    .join("\n");
+
+  const prompt =
+`Ты помогаешь разобрать заголовки таблицы коммерческого документа (инвойс, упаковочный лист, спецификация).
+
+Допустимые поля и их смысл:
+${fieldList}
+
+Заголовки таблицы (могут быть на русском, английском, китайском или смешанные):
+${headers.map((h, i) => `${i}: ${JSON.stringify(h)}`).join("\n")}
+
+Ответь ТОЛЬКО валидным JSON-объектом вида {"0": "field", "1": "qty", …},
+где ключ — индекс заголовка, значение — одно из допустимых полей выше.
+Если заголовок не соответствует ни одному полю — не включай его в ответ.
+Никакого пояснительного текста, только JSON.`;
+
+  let result = {};
+  try {
+    const raw = await _callClaude(prompt, 300);
+    const jsonStr = raw.replace(/```json\s*/g, "").replace(/```/g, "").trim();
+    const parsed = JSON.parse(jsonStr);
+    // превращаем {индекс → поле} в {заголовок → поле}
+    for (const [idxStr, field] of Object.entries(parsed)) {
+      const idx = parseInt(idxStr, 10);
+      if (idx >= 0 && idx < headers.length && FIELD_DESCRIPTIONS[field]) {
+        result[headers[idx]] = field;
+      }
+    }
+  } catch (e) {
+    console.warn("aiDetectFields fallback:", e.message);
+    // При ошибке возвращаем пустой объект — вызывающий код применит локальную логику
+  }
+  _aiFieldCache.set(key, result);
+  return result;
+}
+
+/**
+ * Разбивает наименование товара на части через Claude.
+ * @param {string[]} names — массив наименований (батч до 20)
+ * @returns {Promise<Array>} — [{cleanName, brand, model}, …]
+ */
+async function aiParseNames(names) {
+  if (!names.length) return [];
+  // Проверяем кэш
+  const uncached = names.filter(n => !_aiNameCache.has(n));
+  if (!uncached.length) return names.map(n => _aiNameCache.get(n));
+
+  const prompt =
+`Разбери каждое наименование товара на составные части.
+
+Правила:
+- cleanName: само наименование товара (тип изделия), без марки и модели
+- brand: торговая марка / производитель, если явно указана (иначе пустая строка)
+- model: модель или серийная маркировка, если указана (иначе пустая строка)
+
+Примеры:
+"автомобиль Субару Форестер SH5" → {"cleanName":"автомобиль","brand":"Субару","model":"Форестер"}
+"22344-BE-XL FAG" → {"cleanName":"22344-BE-XL","brand":"FAG","model":""}
+"Насос центробежный N319GS2400" → {"cleanName":"Насос центробежный","brand":"","model":""}
+"CPU Intel Core i5-12400" → {"cleanName":"CPU","brand":"Intel","model":"Core i5-12400"}
+
+Наименования для разбора:
+${uncached.map((n, i) => `${i}: ${JSON.stringify(n)}`).join("\n")}
+
+Ответь ТОЛЬКО валидным JSON-массивом объектов [{cleanName, brand, model}, …]
+строго в том же порядке, что и входные наименования. Только JSON, без пояснений.`;
+
+  try {
+    const raw = await _callClaude(prompt, 800);
+    const jsonStr = raw.replace(/```json\s*/g, "").replace(/```/g, "").trim();
+    const parsed = JSON.parse(jsonStr);
+    uncached.forEach((name, i) => {
+      const r = parsed[i] || {};
+      _aiNameCache.set(name, {
+        cleanName: r.cleanName || name,
+        brand: r.brand || "",
+        model: r.model || "",
+      });
+    });
+  } catch (e) {
+    console.warn("aiParseNames fallback:", e.message);
+    uncached.forEach(name => {
+      if (!_aiNameCache.has(name)) _aiNameCache.set(name, parseNameParts(name));
+    });
+  }
+  return names.map(n => _aiNameCache.get(n) || parseNameParts(n));
+}
+
+/* ─── Расширенная версия extractFromGrid с ИИ-распознаванием ─────────────
+   Используется вместо extractFromGrid когда доступен Claude API.
+   Параметр aiFieldMap передаётся снаружи (из buildBtn после await aiDetectFields). */
+function extractFromGridWithAI(rows, fileName, aiFieldMap) {
+  if (!aiFieldMap || !Object.keys(aiFieldMap).length) {
+    return extractFromGrid(rows, fileName);
+  }
+  // Клонируем строку заголовков, подменяя непознанные заголовки распознанными
+  const headerRow = rows[0] ? [...rows[0]] : [];
+  const patchedRows = [headerRow.map(cell => {
+    const str = String(cell || "").trim();
+    // Если ИИ определил поле для этого заголовка — подставляем его как ключ
+    if (aiFieldMap[str]) return aiFieldMap[str];
+    return cell;
+  }), ...rows.slice(1)];
+  return extractFromGrid(patchedRows, fileName);
+}
+
+
+
 /* ---------- Утилиты ------------------------------------------------------ */
 function parseNum(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -435,8 +607,49 @@ async function readSpreadsheet(file) {
   const items = [];
   for (const sheetName of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "", raw: true });
-    items.push(...extractFromGrid(rows, file.name));
+
+    /* ── Фаза 1: ИИ определяет семантику заголовков ──────────────────────── */
+    let aiFieldMap = {};
+    try {
+      // Ищем заголовочную строку — берём строку с наибольшим количеством непустых ячеек среди первых 30
+      let headerRow = [];
+      let maxNonEmpty = 0;
+      for (let r = 0; r < Math.min(rows.length, 30); r++) {
+        const nonEmpty = rows[r].filter(c => String(c || "").trim()).length;
+        if (nonEmpty > maxNonEmpty) { maxNonEmpty = nonEmpty; headerRow = rows[r]; }
+      }
+      const headers = headerRow.map(c => String(c || "").trim()).filter(Boolean);
+      if (headers.length >= 2) {
+        aiFieldMap = await aiDetectFields(headers);
+      }
+    } catch (e) {
+      // ИИ недоступен — продолжаем с локальной логикой
+    }
+
+    const sheetItems = extractFromGridWithAI(rows, file.name, aiFieldMap);
+    items.push(...sheetItems);
   }
+
+  /* ── Фаза 2: ИИ разбирает наименования на марку/модель ──────────────── */
+  try {
+    const names = [...new Set(items.map(it => it.name).filter(n => n && n.length > 3))];
+    if (names.length > 0) {
+      const parsed = await aiParseNames(names);
+      const nameMap = new Map(names.map((n, i) => [n, parsed[i]]));
+      for (const it of items) {
+        const p = nameMap.get(it.name);
+        if (p) {
+          if (!it.brand && p.brand)  it.brand = p.brand;
+          if (!it.model && p.model)  it.model = p.model;
+          // cleanName заменяем только если ИИ сократил (убрал марку/модель из названия)
+          if (p.cleanName && p.cleanName.length < it.name.length) it.name = p.cleanName;
+        }
+      }
+    }
+  } catch (e) {
+    // ИИ недоступен — наименования остаются как есть
+  }
+
   return items;
 }
 
@@ -1499,7 +1712,7 @@ buildBtn.addEventListener("click", async () => {
     const footerErrors = [];
     const scanNotes = []; // ошибки итогов файлов (нетто/брутто footer vs сумма строк)
     for (const f of state.files) {
-      setStatus(`Обрабатываю: ${f.name}`);
+      setStatus(`Обрабатываю: ${f.name} (запрос к ИИ…)`);
       try {
         const items = await readFileItems(f);
         if (!items.length) state.notes.push(`В файле «${f.name}» табличные данные о товарах не найдены — проверьте документ.`);
