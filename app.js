@@ -1040,7 +1040,7 @@ async function readPdf(file) {
       `4. Загрузить в программу как обычный PDF`
     );
   }
-  return extractFromPdfPages(pages, file.name);
+  return await extractFromPdfPages(pages, file.name);
 }
 
 let pdfWarnings = [];
@@ -1069,7 +1069,7 @@ function pdfLines(frags) {
   return lines;
 }
 
-function extractFromPdfPages(pages, fileName) {
+async function extractFromPdfPages(pages, fileName) {
   const stray = [];        // фрагменты за пределами страницы — артефакты merged-ячеек
   const pageLines = pages.map((pg) => {
     const inPage = [], out = [];
@@ -1297,8 +1297,32 @@ function extractFromPdfPages(pages, fileName) {
     }
   }
 
+  /* ── ИИ-фаза 1: определяем семантику заголовков ────────────────────── */
+  let aiFieldMap = {};
+  try {
+    const headers = headerTexts.map(c => String(c || "").trim()).filter(Boolean);
+    if (headers.length >= 2) aiFieldMap = await aiDetectFields(headers);
+  } catch (e) { /* ИИ недоступен — продолжаем с локальной логикой */ }
+
   const grid = [headerTexts, ...records];
-  const items = extractFromGrid(grid, fileName);
+  const items = extractFromGridWithAI(grid, fileName, aiFieldMap);
+
+  /* ── ИИ-фаза 2: разбираем наименования на марку/модель ──────────────── */
+  try {
+    const names = [...new Set(items.map(it => it.name).filter(n => n && n.length > 3))];
+    if (names.length > 0) {
+      const parsed = await aiParseNames(names);
+      const nameMap = new Map(names.map((n, i) => [n, parsed[i]]));
+      for (const it of items) {
+        const p = nameMap.get(it.name);
+        if (p) {
+          if (!it.brand && p.brand) it.brand = p.brand;
+          if (!it.model && p.model) it.model = p.model;
+          if (p.cleanName && p.cleanName.length < it.name.length) it.name = p.cleanName;
+        }
+      }
+    }
+  } catch (e) { /* ИИ недоступен */ }
 
   /* 4. Политика мест: печать Excel не сохраняет привязку объединённых ячеек
      к строкам. Одно место на файл — присваиваем всем; несколько — не гадаем. */
@@ -1322,19 +1346,21 @@ async function readDocx(file) {
   if (!window.mammoth) throw new Error("Библиотека mammoth не загрузилась. Проверьте доступ в интернет.");
   const buf = await file.arrayBuffer();
   const res = await mammoth.extractRawText({ arrayBuffer: buf });
-  return extractFromText(res.value, file.name);
+  return extractFromTextWithAI(res.value, file.name);
 }
 
 async function readTxt(file) {
-  return extractFromText(await file.text(), file.name);
+  return extractFromTextWithAI(await file.text(), file.name);
 }
 
 /* Текстовые документы: строим «сетку» из строк, разделённых табами / 2+ пробелами / «;»,
    затем применяем ту же логику поиска заголовков, что и для таблиц. */
-function extractFromText(text, fileName) {
+function extractFromText(text, fileName, aiFieldMap) {
   const rawLines = text.split(/\r?\n/).map((l) => l.replace(/\u00A0/g, " ")).filter((l) => l.trim());
   const grid = rawLines.map((l) => l.split(/\t|;| {2,}/).map((c) => c.trim()).filter((c, i, a) => !(c === "" && i === a.length - 1)));
-  const items = extractFromGrid(grid, fileName);
+  const items = aiFieldMap && Object.keys(aiFieldMap).length
+    ? extractFromGridWithAI(grid, fileName, aiFieldMap)
+    : extractFromGrid(grid, fileName);
   if (items.length) return items;
 
   /* Резервный разбор: строки вида «Наименование, арт. XXX, 10 шт, 25,00».
@@ -1356,6 +1382,44 @@ function extractFromText(text, fileName) {
     });
   }
   return fallback;
+}
+
+/* Обёртка над extractFromText с ИИ-распознаванием заголовков и наименований. */
+async function extractFromTextWithAI(text, fileName) {
+  /* ── ИИ-фаза 1: определяем семантику заголовков ──────────────────────── */
+  let aiFieldMap = {};
+  try {
+    const rawLines = text.split(/\r?\n/).map(l => l.replace(/\u00A0/g, " ")).filter(l => l.trim());
+    const grid0 = rawLines.slice(0, 30).map(l =>
+      l.split(/\t|;| {2,}/).map(c => c.trim()).filter(Boolean));
+    let headerRow = [];
+    let maxNonEmpty = 0;
+    for (const row of grid0) {
+      if (row.length > maxNonEmpty) { maxNonEmpty = row.length; headerRow = row; }
+    }
+    if (headerRow.length >= 2) aiFieldMap = await aiDetectFields(headerRow);
+  } catch (e) { /* ИИ недоступен */ }
+
+  const items = extractFromText(text, fileName, aiFieldMap);
+
+  /* ── ИИ-фаза 2: разбираем наименования на марку/модель ───────────────── */
+  try {
+    const names = [...new Set(items.map(it => it.name).filter(n => n && n.length > 3))];
+    if (names.length > 0) {
+      const parsed = await aiParseNames(names);
+      const nameMap = new Map(names.map((n, i) => [n, parsed[i]]));
+      for (const it of items) {
+        const p = nameMap.get(it.name);
+        if (p) {
+          if (!it.brand && p.brand) it.brand = p.brand;
+          if (!it.model && p.model) it.model = p.model;
+          if (p.cleanName && p.cleanName.length < it.name.length) it.name = p.cleanName;
+        }
+      }
+    }
+  } catch (e) { /* ИИ недоступен */ }
+
+  return items;
 }
 
 /* ---------- Объединение и сверка ----------------------------------------- */
@@ -1434,6 +1498,54 @@ function mergeItems(allItems) {
         const sub = nkey + "|" + normKey(p.article);
         if (!byGoods.has(sub)) byGoods.set(sub, []);
         byGoods.get(sub).push(p);
+      }
+    }
+  }
+
+  /* 2б. Объединение по точному совпадению артикула между группами из разных файлов.
+     Актуально когда один и тот же товар в разных документах имеет разные наименования
+     (например, полное и сокращённое), но одинаковый артикул/код изделия.
+     Работает для ВСЕХ групп, а не только для «сирот». */
+  {
+    const allSources0 = new Set(allItems.map((it) => it.source));
+    if (allSources0.size > 1) {
+      /* Строим карту: normArticle → [key, ...] для групп с непустым артикулом */
+      const artToKeys = new Map();
+      for (const [key, parts] of byGoods) {
+        /* Берём все непустые артикулы внутри группы */
+        const arts = [...new Set(parts.map(p => normKey(p.article)).filter(Boolean))];
+        for (const art of arts) {
+          if (!artToKeys.has(art)) artToKeys.set(art, []);
+          artToKeys.get(art).push(key);
+        }
+      }
+      for (const [, keys] of artToKeys) {
+        if (keys.length < 2) continue;
+        /* Проверяем: группы из разных файлов? */
+        const srcSets = keys.map(k => new Set((byGoods.get(k) || []).map(p => p.source)));
+        const allSrc = new Set([...srcSets].flatMap(s => [...s]));
+        if (allSrc.size < 2) continue;
+        /* Не объединяем группы, которые УЖЕ содержат несколько файлов (уже слиты) */
+        const singleSrcKeys = keys.filter(k => {
+          const parts = byGoods.get(k);
+          if (!parts) return false;
+          const srcs = new Set(parts.map(p => p.source));
+          return srcs.size === 1;
+        });
+        if (singleSrcKeys.length < 2) continue;
+        /* Проверяем что singleSrcKeys из РАЗНЫХ файлов */
+        const singleSrcs = singleSrcKeys.map(k => [...byGoods.get(k)][0].source);
+        if (new Set(singleSrcs).size < 2) continue;
+        /* Объединяем все single-source группы в первую */
+        const baseKey = singleSrcKeys[0];
+        let mergedParts = [...byGoods.get(baseKey)];
+        for (let ki = 1; ki < singleSrcKeys.length; ki++) {
+          const k2 = singleSrcKeys[ki];
+          mergedParts = [...mergedParts, ...byGoods.get(k2)];
+          byGoods.delete(k2);
+        }
+        byGoods.delete(baseKey);
+        byGoods.set(baseKey + "~byArt~", mergedParts);
       }
     }
   }
@@ -1893,7 +2005,7 @@ function buildRemarkCell(r) {
   if (r.mathComment) {
     parts.push(`<span class="math-err">${escapeHtml(r.mathComment)}</span>`);
   }
-  const base = (r.comment || "").replace(r.mathComment || " ", "").replace(/^;\s*|;\s*$/g,"").trim();
+  const base = (r.comment || "").replace(r.mathComment || "", "").replace(/^;\s*|;\s*$/g,"").trim();
   if (base) parts.push(escapeHtml(base));
   return parts.join("<br>");
 }
