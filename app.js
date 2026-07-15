@@ -1297,32 +1297,8 @@ function extractFromPdfPages(pages, fileName) {
     }
   }
 
-  /* ── ИИ-фаза 1: определяем семантику заголовков ────────────────────── */
-  let aiFieldMap = {};
-  try {
-    const headers = headerTexts.map(c => String(c || "").trim()).filter(Boolean);
-    if (headers.length >= 2) aiFieldMap = await aiDetectFields(headers);
-  } catch (e) { /* ИИ недоступен — продолжаем с локальной логикой */ }
-
   const grid = [headerTexts, ...records];
-  const items = extractFromGridWithAI(grid, fileName, aiFieldMap);
-
-  /* ── ИИ-фаза 2: разбираем наименования на марку/модель ──────────────── */
-  try {
-    const names = [...new Set(items.map(it => it.name).filter(n => n && n.length > 3))];
-    if (names.length > 0) {
-      const parsed = await aiParseNames(names);
-      const nameMap = new Map(names.map((n, i) => [n, parsed[i]]));
-      for (const it of items) {
-        const p = nameMap.get(it.name);
-        if (p) {
-          if (!it.brand && p.brand) it.brand = p.brand;
-          if (!it.model && p.model) it.model = p.model;
-          if (p.cleanName && p.cleanName.length < it.name.length) it.name = p.cleanName;
-        }
-      }
-    }
-  } catch (e) { /* ИИ недоступен */ }
+  const items = extractFromGrid(grid, fileName);
 
   /* 4. Политика мест: печать Excel не сохраняет привязку объединённых ячеек
      к строкам. Одно место на файл — присваиваем всем; несколько — не гадаем. */
@@ -1346,21 +1322,19 @@ async function readDocx(file) {
   if (!window.mammoth) throw new Error("Библиотека mammoth не загрузилась. Проверьте доступ в интернет.");
   const buf = await file.arrayBuffer();
   const res = await mammoth.extractRawText({ arrayBuffer: buf });
-  return extractFromTextWithAI(res.value, file.name);
+  return extractFromText(res.value, file.name);
 }
 
 async function readTxt(file) {
-  return extractFromTextWithAI(await file.text(), file.name);
+  return extractFromText(await file.text(), file.name);
 }
 
 /* Текстовые документы: строим «сетку» из строк, разделённых табами / 2+ пробелами / «;»,
    затем применяем ту же логику поиска заголовков, что и для таблиц. */
-function extractFromText(text, fileName, aiFieldMap) {
+function extractFromText(text, fileName) {
   const rawLines = text.split(/\r?\n/).map((l) => l.replace(/\u00A0/g, " ")).filter((l) => l.trim());
   const grid = rawLines.map((l) => l.split(/\t|;| {2,}/).map((c) => c.trim()).filter((c, i, a) => !(c === "" && i === a.length - 1)));
-  const items = aiFieldMap && Object.keys(aiFieldMap).length
-    ? extractFromGridWithAI(grid, fileName, aiFieldMap)
-    : extractFromGrid(grid, fileName);
+  const items = extractFromGrid(grid, fileName);
   if (items.length) return items;
 
   /* Резервный разбор: строки вида «Наименование, арт. XXX, 10 шт, 25,00».
@@ -1382,45 +1356,6 @@ function extractFromText(text, fileName, aiFieldMap) {
     });
   }
   return fallback;
-}
-
-/* Обёртка над extractFromText с ИИ-распознаванием заголовков и наименований. */
-async function extractFromTextWithAI(text, fileName) {
-  /* ── ИИ-фаза 1: определяем семантику заголовков ──────────────────────── */
-  let aiFieldMap = {};
-  try {
-    const rawLines = text.split(/\r?\n/).map(l => l.replace(/\u00A0/g, " ")).filter(l => l.trim());
-    /* Ищем строку-кандидат на заголовок: максимальное число непустых ячеек среди первых 30 строк */
-    const grid0 = rawLines.slice(0, 30).map(l =>
-      l.split(/\t|;| {2,}/).map(c => c.trim()).filter(Boolean));
-    let headerRow = [];
-    let maxNonEmpty = 0;
-    for (const row of grid0) {
-      if (row.length > maxNonEmpty) { maxNonEmpty = row.length; headerRow = row; }
-    }
-    if (headerRow.length >= 2) aiFieldMap = await aiDetectFields(headerRow);
-  } catch (e) { /* ИИ недоступен */ }
-
-  const items = extractFromText(text, fileName, aiFieldMap);
-
-  /* ── ИИ-фаза 2: разбираем наименования на марку/модель ───────────────── */
-  try {
-    const names = [...new Set(items.map(it => it.name).filter(n => n && n.length > 3))];
-    if (names.length > 0) {
-      const parsed = await aiParseNames(names);
-      const nameMap = new Map(names.map((n, i) => [n, parsed[i]]));
-      for (const it of items) {
-        const p = nameMap.get(it.name);
-        if (p) {
-          if (!it.brand && p.brand) it.brand = p.brand;
-          if (!it.model && p.model) it.model = p.model;
-          if (p.cleanName && p.cleanName.length < it.name.length) it.name = p.cleanName;
-        }
-      }
-    }
-  } catch (e) { /* ИИ недоступен */ }
-
-  return items;
 }
 
 /* ---------- Объединение и сверка ----------------------------------------- */
