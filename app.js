@@ -1473,34 +1473,53 @@ function mergeItems(allItems) {
     }
   }
 
-  /* 2. Между файлами группируем ПО НАИМЕНОВАНИЮ: в инвойсе артикула может
-     не быть, а в упаковочном листе он есть — жёсткий ключ «имя+артикул»
-     помешал бы объединению. Если под одним наименованием встречаются РАЗНЫЕ
-     артикулы — разводим по артикулам (это разные товары). */
-  const byName = new Map(); // normName → parts[]
-  for (const [, m] of perFile) {
-    for (const [, it] of m) {
-      const nkey = normKey(it.name) || "«без наименования» " + normKey(it.article);
-      if (!byName.has(nkey)) byName.set(nkey, []);
-      byName.get(nkey).push(it);
-    }
-  }
+/* 2. Между файлами группируем ПО АРТИКУЛУ — это устойчивый идентификатор
+     товара. Позиции с одинаковым артикулом объединяются, даже если
+     наименования записаны по-разному (перевод, лишнее слово, двуязычная
+     строка «рус / eng»). Позиции БЕЗ артикула (обычно строки инвойса)
+     группируются по наименованию и присоединяются к артикульной группе,
+     если их наименование совпадает с наименованием одной из её позиций. */
+  const allParts = [];
+  for (const [, m] of perFile) for (const [, it] of m) allParts.push(it);
 
-  const byGoods = new Map(); // итоговые группы (порядок вставки = порядок появления)
-  for (const [nkey, parts] of byName) {
-    const arts = [...new Set(parts.map((p) => normKey(p.article)).filter(Boolean))];
-    if (arts.length <= 1) {
-      byGoods.set(nkey, parts);
-    } else {
-      /* одно имя, разные артикулы → отдельные товары; части без артикула
-         остаются собственной группой (однозначно отнести их нельзя) */
-      for (const p of parts) {
-        const sub = nkey + "|" + normKey(p.article);
-        if (!byGoods.has(sub)) byGoods.set(sub, []);
-        byGoods.get(sub).push(p);
-      }
-    }
-  }
+  const groups = new Map();        // ключ группы → parts[]
+  const orderOf = new Map();       // ключ → индекс первого появления (порядок строк)
+  const artKeyOf = new Map();      // нормализованный артикул → ключ группы
+  const nameToArtKey = new Map();  // нормализованное имя → ключ артикульной группы
+
+  const pushTo = (key, it, idx) => {
+    if (!groups.has(key)) { groups.set(key, []); orderOf.set(key, idx); }
+    groups.get(key).push(it);
+  };
+
+  /* Проход 1: позиции с артикулом → группа по артикулу. */
+  allParts.forEach((it, idx) => {
+    const art = normKey(it.article);
+    if (!art) return;
+    let key = artKeyOf.get(art);
+    if (!key) { key = "art|" + art; artKeyOf.set(art, key); }
+    pushTo(key, it, idx);
+    const nm = normKey(it.name);
+    if (nm && !nameToArtKey.has(nm)) nameToArtKey.set(nm, key);
+  });
+
+  /* Проход 2: позиции без артикула → к артикульной группе по совпадению
+     наименования, иначе собственная группа по наименованию. */
+  allParts.forEach((it, idx) => {
+    if (normKey(it.article)) return;
+    const nm = normKey(it.name);
+    const key = (nm && nameToArtKey.has(nm))
+      ? nameToArtKey.get(nm)
+      : "name|" + (nm || "«без наименования»");
+    pushTo(key, it, idx);
+  });
+
+  /* Порядок строк — по первому появлению товара в документах. */
+  const byGoods = new Map(
+    [...groups.keys()]
+      .sort((a, b) => orderOf.get(a) - orderOf.get(b))
+      .map((k) => [k, groups.get(k)])
+  );
 
   /* 2б. Объединение по точному совпадению артикула между группами из разных файлов.
      Актуально когда один и тот же товар в разных документах имеет разные наименования
