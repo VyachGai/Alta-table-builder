@@ -2242,3 +2242,19 @@ exportBtn.addEventListener("click", async () => {
   a.click();
   URL.revokeObjectURL(a.href);
 });
+// Вызов Claude через прокси; ключ остаётся на сервере Railway
+async function askClaude(messages, opts = {}) {
+  const res = await fetch("/api/anthropic", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      messages,
+      max_tokens: opts.max_tokens || 4096,
+      system: opts.system,
+      model: opts.model,          // необязательно, по умолчанию — из server.js
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Ошибка прокси");
+  return (data.content || []).map((b) => (b.type === "text" ? b.text : "")).join("");
+}
