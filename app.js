@@ -1569,10 +1569,16 @@ function mergeItems(allItems) {
     }
   }
 
-  /* Нечёткое дослияние: группы, встречающиеся только в ОДНОМ файле («сироты»),
-     пытаемся сопоставить с сиротами из ДРУГИХ файлов по схожести наименования.
-     Актуально когда PDF одного из документов искажает текст (лигатуры шрифта)
-     и/или добавляет общий суффикс бренда, которого нет в другом документе. */
+  /* Нечёткое дослияние: группы, ещё не покрывающие ВСЕ загруженные файлы,
+     пытаемся сопоставить с такими же «недослитыми» группами из ДРУГИХ файлов —
+     по точному совпадению артикула или по схожести наименования. Сравниваем
+     группу целиком (а не только группы из ОДНОГО файла): группа могла уже
+     объединить 2 из 3 файлов по совпавшему артикулу (шаг 2б выше), а третий
+     файл — указывать для того же товара другой (или ошибочно распознанный)
+     артикул; такую группу нельзя было сопоставить по имени с уже слитой
+     парой, если сверка ограничивалась только «сиротами» из одного файла.
+     Сравниваем только группы с НЕПЕРЕСЕКАЮЩИМИСЯ файлами-источниками — иначе
+     рискуем задвоить уже учтённые данные. */
   {
     /* Общий «шумовой» суффикс (марка/бренд), который может присутствовать
        в одном документе и отсутствовать в другом — убираем перед сравнением. */
@@ -1580,58 +1586,60 @@ function mergeItems(allItems) {
 
     const allSources = new Set(allItems.map((it) => it.source));
     if (allSources.size > 1) {
-      const orphanKeys = [];
-      for (const [key, parts] of byGoods) {
-        const srcSet = new Set(parts.map((p) => p.source));
-        if (srcSet.size === 1) orphanKeys.push(key);
-      }
+      const groupKeys = [...byGoods.keys()];
+      const srcSetOf = (key) => new Set(byGoods.get(key).map((p) => p.source));
+      const disjoint = (a, b) => ![...a].some((s) => b.has(s));
+
       const usedByArticle = new Set();
-      /* Приоритет №1: точное совпадение артикула между сиротами из разных
-         файлов — самый надёжный признак одного и того же товара, надёжнее
-         сравнения наименований (которые могут отличаться словами, языком
-         описания или содержать OCR-искажения). */
+      /* Приоритет №1: точное совпадение артикула между непересекающимися по
+         файлам группами — самый надёжный признак одного и того же товара,
+         надёжнее сравнения наименований (которые могут отличаться словами,
+         языком описания или содержать OCR-искажения). */
       {
-        const byArticle = new Map(); // normArticle → [{idx, source}]
-        orphanKeys.forEach((key, idx) => {
-          const parts = byGoods.get(key);
-          const art = normKey(parts[0].article);
+        const byArticle = new Map(); // normArticle → [idx, ...]
+        groupKeys.forEach((key, idx) => {
+          const art = normKey(byGoods.get(key)[0].article);
           if (!art) return;
           if (!byArticle.has(art)) byArticle.set(art, []);
-          byArticle.get(art).push({ idx, source: parts[0].source });
+          byArticle.get(art).push(idx);
         });
-        for (const [, entries] of byArticle) {
-          /* Объединяем все сиротские записи с этим артикулом из РАЗНЫХ файлов */
-          const bySource = new Map();
-          for (const e of entries) {
-            if (!bySource.has(e.source)) bySource.set(e.source, []);
-            bySource.get(e.source).push(e.idx);
+        for (const [, idxs] of byArticle) {
+          if (idxs.length < 2) continue;
+          /* Жадно объединяем записи с этим артикулом, пропуская те, что уже
+             пересекаются по файлам с уже накопленной группой. */
+          const merged = [idxs[0]];
+          const mergedSrc = srcSetOf(groupKeys[idxs[0]]);
+          for (let k = 1; k < idxs.length; k++) {
+            const srcK = srcSetOf(groupKeys[idxs[k]]);
+            if (!disjoint(mergedSrc, srcK)) continue;
+            merged.push(idxs[k]);
+            srcK.forEach((s) => mergedSrc.add(s));
           }
-          if (bySource.size < 2) continue; // артикул встречается только в одном файле
-          const allIdx = entries.map((e) => e.idx);
-          let mergedKey = orphanKeys[allIdx[0]];
+          if (merged.length < 2) continue; // артикул фактически встречается в одном файле
+          let mergedKey = groupKeys[merged[0]];
           let mergedParts = byGoods.get(mergedKey);
-          for (let k = 1; k < allIdx.length; k++) {
-            const key2 = orphanKeys[allIdx[k]];
+          for (let k = 1; k < merged.length; k++) {
+            const key2 = groupKeys[merged[k]];
             mergedParts = [...mergedParts, ...byGoods.get(key2)];
             byGoods.delete(key2);
           }
           byGoods.delete(mergedKey);
           byGoods.set(mergedKey + "~byArticle~", mergedParts);
-          allIdx.forEach((idx) => usedByArticle.add(idx));
+          merged.forEach((idx) => usedByArticle.add(idx));
         }
       }
       const candidates = [];
-      for (let i = 0; i < orphanKeys.length; i++) {
-        if (usedByArticle.has(i)) continue;
-        const partsA = byGoods.get(orphanKeys[i]);
-        const srcA = partsA[0].source;
+      for (let i = 0; i < groupKeys.length; i++) {
+        if (usedByArticle.has(i) || !byGoods.has(groupKeys[i])) continue;
+        const partsA = byGoods.get(groupKeys[i]);
+        const srcSetA = srcSetOf(groupKeys[i]);
         const nameA = stripNoise(normKey(partsA[0].name));
         const qtyA = partsA.reduce((s, p) => (p.qty !== null ? s + p.qty : s), 0) || null;
-        for (let j = i + 1; j < orphanKeys.length; j++) {
-          if (usedByArticle.has(j)) continue;
-          const partsB = byGoods.get(orphanKeys[j]);
-          const srcB = partsB[0].source;
-          if (srcA === srcB) continue; // сравниваем только сирот из разных файлов
+        for (let j = i + 1; j < groupKeys.length; j++) {
+          if (usedByArticle.has(j) || !byGoods.has(groupKeys[j])) continue;
+          const partsB = byGoods.get(groupKeys[j]);
+          const srcSetB = srcSetOf(groupKeys[j]);
+          if (!disjoint(srcSetA, srcSetB)) continue; // сравниваем только непересекающиеся по файлам группы
           /* Защита от ложных совпадений: если qty известен у обеих сторон,
              он ДОЛЖЕН совпадать — иначе это разные товары со схожим названием
              (например «Connector male stud» и «Connector male stud - GE-10LRED-1/8»). */
@@ -1651,7 +1659,8 @@ function mergeItems(allItems) {
       const used = new Set();
       for (const { i, j } of candidates) {
         if (used.has(i) || used.has(j)) continue;
-        const keyA = orphanKeys[i], keyB = orphanKeys[j];
+        const keyA = groupKeys[i], keyB = groupKeys[j];
+        if (!byGoods.has(keyA) || !byGoods.has(keyB)) continue;
         const merged = [...byGoods.get(keyA), ...byGoods.get(keyB)];
         byGoods.delete(keyA);
         byGoods.delete(keyB);
