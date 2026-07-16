@@ -23,7 +23,10 @@
   const SCHEMA_INSTRUCTION = `Извлеки все товарные позиции документа в JSON-массив. Каждый элемент:
 {
   "name": "наименование товара (строка)",
-  "article": "артикул / код изделия / модель, или пустая строка",
+  "article": "артикул / код изделия, или пустая строка",
+  "brand": "марка / торговая марка товара, или пустая строка",
+  "model": "модель товара, или пустая строка",
+  "maker": "изготовитель / производитель товара, или пустая строка",
   "unitRaw": "единица измерения как в документе (шт, pcs, кг, компл, pair...), или пустая строка",
   "qty": число или null,        // количество
   "price": число или null,      // цена за единицу
@@ -39,7 +42,8 @@
 - Числа возвращай числами (десятичный разделитель — точка), а не строками. Если значения в документе нет — null. Ничего не выдумывай.
 - unitRaw — ровно как в документе, без нормализации в коды.
 - Если один товар лежит в нескольких грузовых местах — сделай отдельный элемент на каждое место со своим "place" и своими весами.
-- Наименование бери максимально полное. Не объединяй разные товары в одну строку.
+- Наименование бери максимально полное, не вырезай из него марку/модель — "name" остаётся как в документе.
+- brand/model/maker: сначала смотри отдельные колонки документа (Brand, Trademark, Model, Manufacturer, Марка, Модель, Изготовитель и т. п.); если отдельной колонки нет — определи их по тексту наименования товара (например, «Подшипник SKF 6205» → brand "SKF", model "6205"; «Насос масляный, изготовитель ООО Ромб» → maker "ООО Ромб"). Если оснований недостаточно — оставляй пустую строку, не угадывай.
 
 Верни только JSON-массив (может быть пустым []).`;
 
@@ -156,6 +160,9 @@
       source,
       name: str(o.name),
       article: str(o.article),
+      brand: str(o.brand),
+      model: str(o.model),
+      maker: str(o.maker),
       unitRaw: str(o.unitRaw),
       qty: num(o.qty),
       price: num(o.price),
@@ -166,6 +173,17 @@
       place: str(o.place),
       mathErrors: [],   // математическую сверку downstream не ломает пустой массив
     };
+  }
+
+  /* Подстраховка: если ИИ не определил марку/модель, пробуем локальную эвристику
+     parseNameParts (та же, что использует локальный парсер app.js) по названию. */
+  function fillBrandModelFallback(it) {
+    if ((!it.brand || !it.model) && typeof parseNameParts === "function") {
+      const p = parseNameParts(it.name);
+      if (!it.brand && p.brand) it.brand = p.brand;
+      if (!it.model && p.model) it.model = p.model;
+    }
+    return it;
   }
 
   async function aiExtract(file) {
@@ -186,7 +204,9 @@
     const answer = await callClaude(userContent);
     const arr = parseJsonLoose(answer);
     if (!Array.isArray(arr)) throw new Error("ИИ вернул не JSON-массив");
-    return arr.map((o) => toItem(o, file.name)).filter((it) => it.name || it.article);
+    return arr.map((o) => toItem(o, file.name))
+      .filter((it) => it.name || it.article)
+      .map(fillBrandModelFallback);
   }
 
   /* ---------- Перехват readFileItems: ИИ → фолбэк на локальный парсер ------ */
