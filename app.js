@@ -641,8 +641,11 @@ async function readSpreadsheet(file) {
         if (p) {
           if (!it.brand && p.brand)  it.brand = p.brand;
           if (!it.model && p.model)  it.model = p.model;
-          // cleanName заменяем только если ИИ сократил (убрал марку/модель из названия)
-          if (p.cleanName && p.cleanName.length < it.name.length) it.name = p.cleanName;
+          // cleanName заменяем только если ИИ сократил (убрал марку/модель из названия),
+          // но исходное полное наименование сохраняем — оно единственное надёжно
+          // различает товары, у которых после очистки совпадает «чистое» имя
+          // (например «Шайба 3 65Г 019 …» и «Шайба 3.01.019 …» → обе «Шайба»).
+          if (p.cleanName && p.cleanName.length < it.name.length) { it.nameFull = it.name; it.name = p.cleanName; }
         }
       }
     }
@@ -1318,7 +1321,7 @@ async function extractFromPdfPages(pages, fileName) {
         if (p) {
           if (!it.brand && p.brand) it.brand = p.brand;
           if (!it.model && p.model) it.model = p.model;
-          if (p.cleanName && p.cleanName.length < it.name.length) it.name = p.cleanName;
+          if (p.cleanName && p.cleanName.length < it.name.length) { it.nameFull = it.name; it.name = p.cleanName; }
         }
       }
     }
@@ -1413,7 +1416,7 @@ async function extractFromTextWithAI(text, fileName) {
         if (p) {
           if (!it.brand && p.brand) it.brand = p.brand;
           if (!it.model && p.model) it.model = p.model;
-          if (p.cleanName && p.cleanName.length < it.name.length) it.name = p.cleanName;
+          if (p.cleanName && p.cleanName.length < it.name.length) { it.nameFull = it.name; it.name = p.cleanName; }
         }
       }
     }
@@ -1455,13 +1458,18 @@ function nameSimilarity(a, b) {
 const FUZZY_THRESHOLD = 0.82; // допускаем ~18% отличающихся символов (искажения шрифта)
 
 function mergeItems(allItems) {
+  /* Идентичность товара определяем по ПОЛНОМУ наименованию (nameFull), а не по
+     очищенному it.name: очистка отбрасывает различающий суффикс (модель, ГОСТ,
+     типоразмер), из-за чего разные товары внутри одного файла — обычно строки
+     инвойса без артикула — схлопывались бы в одну позицию и суммировали qty. */
+  const nameId = (it) => normKey(it.nameFull || it.name);
   /* 1. Внутри файла: объединяем дубликаты по (наименование+артикул+место). */
   const perFile = new Map(); // file → Map(key → item)
   for (const it of allItems) {
     const fkey = it.source;
     if (!perFile.has(fkey)) perFile.set(fkey, new Map());
     const m = perFile.get(fkey);
-    const key = normKey(it.name) + "|" + normKey(it.article) + "|" + normKey(it.place);
+    const key = nameId(it) + "|" + normKey(it.article) + "|" + normKey(it.place);
     if (!m.has(key)) m.set(key, { ...it });
     else {
       const ex = m.get(key);
@@ -1499,7 +1507,7 @@ function mergeItems(allItems) {
     let key = artKeyOf.get(art);
     if (!key) { key = "art|" + art; artKeyOf.set(art, key); }
     pushTo(key, it, idx);
-    const nm = normKey(it.name);
+    const nm = nameId(it);
     if (nm && !nameToArtKey.has(nm)) nameToArtKey.set(nm, key);
   });
 
@@ -1507,7 +1515,7 @@ function mergeItems(allItems) {
      наименования, иначе собственная группа по наименованию. */
   allParts.forEach((it, idx) => {
     if (normKey(it.article)) return;
-    const nm = normKey(it.name);
+    const nm = nameId(it);
     const key = (nm && nameToArtKey.has(nm))
       ? nameToArtKey.get(nm)
       : "name|" + (nm || "«без наименования»");
